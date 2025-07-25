@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 #pragma once
@@ -27,6 +27,7 @@
 #include "Components/UI/CustomComboBox.h"
 #include "Components/Windows/CustomDialog.h"
 #include "Components/Windows/UndoableButtonAttachment.h"
+#include "Components/Windows/UndoableMultiStateButtonAttachment.h"
 #include "Components/Windows/CodeWindow.h"
 
 // Forward declaration para CreditsOverlay (usado en std::unique_ptr<CreditsOverlay> creditsOverlay)
@@ -35,7 +36,7 @@ class CreditsOverlay;
 //==============================================================================
 // CLASE PRINCIPAL DEL EDITOR
 //==============================================================================
-class JCBCompressorAudioProcessorEditor : public juce::AudioProcessorEditor,
+class JCBExpanderAudioProcessorEditor : public juce::AudioProcessorEditor,
                                           public juce::Timer,
                                           public juce::Button::Listener
 {
@@ -43,8 +44,8 @@ public:
     //==========================================================================
     // CONSTRUCTOR Y DESTRUCTOR
     //==========================================================================
-    JCBCompressorAudioProcessorEditor (JCBCompressorAudioProcessor&, juce::UndoManager& um);
-    ~JCBCompressorAudioProcessorEditor() override;
+    JCBExpanderAudioProcessorEditor (JCBExpanderAudioProcessor&, juce::UndoManager& um);
+    ~JCBExpanderAudioProcessorEditor() override;
 
     //==========================================================================
     // OVERRIDES DE JUCE
@@ -66,13 +67,13 @@ public:
     //==========================================================================
     void updateTransferFunctionFromProcessor() { updateTransferDisplay(); }
     bool getIsLoadingPreset() const noexcept { return isLoadingPreset; }
-    JCBCompressorAudioProcessor& getProcessor() const noexcept { return processor; }
+    JCBExpanderAudioProcessor& getProcessor() const noexcept { return processor; }
     
 private:
     //==========================================================================
     // REFERENCIAS PRINCIPALES
     //==========================================================================
-    JCBCompressorAudioProcessor& processor;
+    JCBExpanderAudioProcessor& processor;
     juce::UndoManager& undoManager;
     
     //==========================================================================
@@ -138,35 +139,23 @@ private:
     // Listener de parámetros para actualizaciones de automatización
     struct TransferFunctionParameterListener : public juce::AudioProcessorValueTreeState::Listener
     {
-        TransferFunctionParameterListener(JCBCompressorAudioProcessorEditor* e) : editor(e) {}
+        TransferFunctionParameterListener(JCBExpanderAudioProcessorEditor* e) : editor(e) {}
         
         void parameterChanged(const juce::String& parameterID, float /*newValue*/) override
         {
-            if (parameterID == "b_THD" || parameterID == "c_RATIO" || parameterID == "h_KNEE")
+            if (parameterID == "b_THD" || parameterID == "c_RATIO" || parameterID == "q_KNEE")
             {
                 // Usar SafePointer para thread safety
-                juce::Component::SafePointer<JCBCompressorAudioProcessorEditor> safeEditor(editor);
+                juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeEditor(editor);
                 
                 juce::MessageManager::callAsync([safeEditor]() {
                     if (safeEditor)
                         safeEditor->updateTransferDisplay();
                 });
             }
-            else if (parameterID == "s_AUTORELEASE")
-            {
-                // Actualizar texto del botón AR y alpha del slider REL cuando el parámetro cambia por automatización o carga de preset
-                juce::Component::SafePointer<JCBCompressorAudioProcessorEditor> safeEditor(editor);
-                
-                juce::MessageManager::callAsync([safeEditor]() {
-                    if (safeEditor) {
-                        safeEditor->updateARButtonText();
-                        safeEditor->updateRelSliderAlpha();
-                    }
-                });
-            }
         }
         
-        JCBCompressorAudioProcessorEditor* editor;
+        JCBExpanderAudioProcessorEditor* editor;
     };
     
     //==========================================================================
@@ -216,12 +205,10 @@ private:
         CustomSlider thdSlider{"thd"};
         CustomSlider ratioSlider{"ratio"};
         CustomSlider kneeSlider{"knee"};
-        CustomSlider againSlider{"again"};
         
         std::unique_ptr<CustomSliderAttachment> thdAttachment;
         std::unique_ptr<CustomSliderAttachment> ratioAttachment;
         std::unique_ptr<CustomSliderAttachment> kneeAttachment;
-        std::unique_ptr<CustomSliderAttachment> againAttachment;
     } leftTopKnobs;
     
     // Controles izquierdos - fila inferior
@@ -229,21 +216,19 @@ private:
         CustomSlider drywetSlider{"drywet"};
         CustomSlider lookaheadSlider{"lookahead"};
         CustomSlider clipSlider{"clipper"};
-        CustomSlider parallSlider{"parall"};
         
         std::unique_ptr<CustomSliderAttachment> drywetAttachment;
         std::unique_ptr<CustomSliderAttachment> lookaheadAttachment;
         std::unique_ptr<CustomSliderAttachment> clipAttachment;
-        std::unique_ptr<CustomSliderAttachment> parallAttachment;
     } leftBottomKnobs;
     
     // Controles derechos - fila superior
     struct RightTopControls {
-        CustomSlider algoSlider{"detect"};
+        CustomSlider rangeSlider{"range"};
         CustomSlider reactSlider{"react"};
         CustomSlider smoothSlider{"smo"};
         
-        std::unique_ptr<CustomSliderAttachment> algoAttachment;
+        std::unique_ptr<CustomSliderAttachment> rangeAttachment;
         std::unique_ptr<CustomSliderAttachment> reactAttachment;
         std::unique_ptr<CustomSliderAttachment> smoothAttachment;
     } rightTopControls;
@@ -252,11 +237,11 @@ private:
     struct RightBottomKnobs {
         CustomSlider atkSlider{"attack"};
         CustomSlider relSlider{"release"};
-        juce::TextButton autorelButton{"A-REL"};
+        CustomSlider holdSlider{"hold"};
         
         std::unique_ptr<CustomSliderAttachment> atkAttachment;
         std::unique_ptr<CustomSliderAttachment> relAttachment;
-        std::unique_ptr<UndoableButtonAttachment> autorelAttachment;
+        std::unique_ptr<CustomSliderAttachment> holdAttachment;
     } rightBottomKnobs;
     
     //==========================================================================
@@ -278,8 +263,8 @@ private:
         std::unique_ptr<UndoableButtonAttachment> scAttachment;
         std::unique_ptr<UndoableButtonAttachment> keyAttachment;
         std::unique_ptr<UndoableButtonAttachment> soloScAttachment;
-        std::unique_ptr<UndoableButtonAttachment> hpfOrderAttachment;
-        std::unique_ptr<UndoableButtonAttachment> lpfOrderAttachment;
+        std::unique_ptr<UndoableMultiStateButtonAttachment> hpfOrderAttachment;
+        std::unique_ptr<UndoableMultiStateButtonAttachment> lpfOrderAttachment;
     } sidechainControls;
     
     //==========================================================================
@@ -377,7 +362,7 @@ private:
     class DiagramOverlay : public juce::Component
     {
     public:
-        DiagramOverlay(JCBCompressorAudioProcessorEditor& editor) : owner(editor)
+        DiagramOverlay(JCBExpanderAudioProcessorEditor& editor) : owner(editor)
         {
             setInterceptsMouseClicks(true, true);
             setAlwaysOnTop(false);  // Cambiado a false para permitir que el código aparezca encima
@@ -574,7 +559,7 @@ private:
             if (blockName.isNotEmpty())
             {
                 // Thread-safe: mover operaciones pesadas a MessageManager::callAsync
-                juce::Component::SafePointer<JCBCompressorAudioProcessorEditor> safeOwner(&owner);
+                juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeOwner(&owner);
                 juce::MessageManager::callAsync([safeOwner, blockName]() {
                     if (!safeOwner) return;  // Componente fue eliminado
                     
@@ -631,7 +616,7 @@ private:
         
     private:
         
-        JCBCompressorAudioProcessorEditor& owner;
+        JCBExpanderAudioProcessorEditor& owner;
         juce::Image diagramImage;
         juce::Image backgroundImage;
         
@@ -792,6 +777,7 @@ private:
     void updateBasicButtonStates();
     void updateSidechainComponentStates();
     void updateBackgroundState();
+    void updateFilterButtonText();
     void updateMeterStates();
     void updateTransferDisplay();
     void updateMeters();
@@ -906,5 +892,5 @@ private:
     // Listeners especializados
     std::unique_ptr<TransferFunctionParameterListener> transferFunctionListener;
     
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JCBCompressorAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JCBExpanderAudioProcessorEditor)
 };

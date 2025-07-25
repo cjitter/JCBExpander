@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 #pragma once
@@ -20,22 +20,23 @@
 #include <unordered_map>
 
 // Archivos del proyecto
-#include "JCBCompressor.h"
+#include "JCBExpander.h"
+#include "Helpers/MovingAverage4800.h"
 
 using namespace juce;
 
 //==============================================================================
 // CLASE PRINCIPAL DEL PROCESADOR
 //==============================================================================
-class JCBCompressorAudioProcessor : public juce::AudioProcessor,
+class JCBExpanderAudioProcessor : public juce::AudioProcessor,
                                     public juce::AudioProcessorValueTreeState::Listener,
                                     private juce::Timer
 {
 public:
     //==============================================================================
     // Constructor y destructor
-    JCBCompressorAudioProcessor();
-    ~JCBCompressorAudioProcessor() override;
+    JCBExpanderAudioProcessor();
+    ~JCBExpanderAudioProcessor() override;
     
     //==============================================================================
     // Métodos principales del AudioProcessor
@@ -209,6 +210,9 @@ private:
     std::atomic<float> leftOutputRMS{-100.0f};
     std::atomic<float> rightOutputRMS{-100.0f};
     std::atomic<float> gainReduction{0.0f};
+    
+    // Promedio móvil para gain reduction (replica average~ 4800 1 de Max)
+    MovingAverage4800 grMovingAverage;
     std::atomic<float> leftSC{-100.0f};
     std::atomic<float> rightSC{-100.0f};
     
@@ -286,5 +290,5 @@ private:
     bool isStateA{true};
     
     //==============================================================================
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JCBCompressorAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JCBExpanderAudioProcessor)
 };

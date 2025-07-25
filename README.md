@@ -1,9 +1,10 @@
-![JCBCompressor Interface](Assets/screenshot.png)
 
-Plugin compresor de audio desarrollado en gen~, exportado con [gen~ Plugin Export](https://github.com/Cycling74/gen-plugin-export) y finalizado con el framework C++ [JUCE](https://github.com/juce-framework/JUCE). Este plugin forma parte de un conjunto de herramientas didácticas que utilizo en la asignatura de Técnicas de Grabación y Masterización para Música Electroacústica del [MCE](https://katarinagurska.com/curso-of/master-de-composicion-electroacustica-mce/). Originalmente creado con JUCE 6 hace unos años, el proyecto ha evolucionado significativamente en su interfaz gráfica y funcionalidad gracias al desarrollo con Claude Code durante junio de 2025. Para más detalles técnicos, consulta [NOTAS.md](NOTAS.md).
+![JCBExpander Interface](Assets/screenshot.png)
+
+Plugin expansor de audio desarrollado en gen~, exportado con [gen~ Plugin Export](https://github.com/Cycling74/gen-plugin-export) y finalizado con el framework C++ [JUCE](https://github.com/juce-framework/JUCE). Este plugin forma parte de un conjunto de herramientas didácticas que utilizo en la asignatura de Técnicas de Grabación y Masterización para Música Electroacústica del [MCE](https://katarinagurska.com/curso-of/master-de-composicion-electroacustica-mce/). Originalmente creado con JUCE 6 hace unos años, el proyecto ha evolucionado significativamente en su interfaz gráfica y funcionalidad gracias al desarrollo con Claude Code durante junio de 2025. Para más detalles técnicos, consulta [NOTAS.md](NOTAS.md).
 
 ## Instalación macOS
-1. Descarga el archivo DMG desde la página de [Releases](https://github.com/cjitter/JCBCompressor/releases)
+1. Descarga el archivo DMG desde la página de [Releases](https://github.com/cjitter/JCBExpander/releases)
 2. Abre el DMG y ejecuta el instalador
 3. El instalador colocará automáticamente los tipos de plugins seleccionados en las ubicaciones correctas del sistema:
    - VST3: `/Library/Audio/Plug-Ins/VST3/`
@@ -30,8 +31,8 @@ Plugin compresor de audio desarrollado en gen~, exportado con [gen~ Plugin Expor
 
 1. Clona el repositorio:
 ```bash
-git clone https://github.com/cjitter/JCBCompressor.git
-cd JCBCompressor
+git clone https://github.com/cjitter/JCBExpander.git
+cd JCBExpander
 ```
 
 2. **Configuración del proyecto**:
@@ -65,11 +66,11 @@ cmake --build build-release   # Para Release
 - **Procesamiento sidechain** interno y externo con filtros paso alto y bajo, 2º/4º orden.
 - **Tres modos de detección**: sharp (sliding RMS), expo RMS y slow RMS, con interpolación continua y control adicional de suavizado.
 - **Ajuste independiente de reacción pico/RMS**.
-- **Compresión con softknee** lineal de primer orden.
+- **Expansión con softknee** lineal de primer orden.
 - **Controles estándar**: threshold (-60 a 0 dB), ratio (1:1 a 20:1), attack (0.1 a 250 ms), release (0.1 a 1000 ms), knee (0 a 30 dB).
 - **Ganancia de compensación** (makeup gain ±12 dB) y **auto gain** (hasta 70% de recuperación).
-- **Compresión paralela** mediante suma 100% señal seca/comprimida.
-- **Softclipping asimétrico**, aplicado tras compresión y makeup gain.
+- **Expansión paralela** mediante suma 100% señal seca/expandida.
+- **Softclipping asimétrico**, aplicado tras expansión y makeup gain.
 - **Control Dry/Wet** (-6 dB a 50%) para mezcla de señal post-procesado (post softclip).
 - **Procesamiento estéreo** con opción estéreo link.
 - **Monitorización avanzada**: escucha delta (entrada/salida) y solo sidechain.
@@ -77,7 +78,7 @@ cmake --build build-release   # Para Release
 - **Gestión de presets** (usuario y fábrica).
 - **Bypass interno**, independiente del DAW.
 - **Formatos disponibles**: VST3, AU y AAX.
-- **Visualización del diagrama de bloques**: Acceso al diagrama completo del compresor con posibilidad de explorar cada bloque y copiar el código GenExpr para usar directamente en objetos Codebox o gen.codebox~ (Max 9).
+- **Visualización del diagrama de bloques**: Acceso al diagrama completo del expansor con posibilidad de explorar cada bloque y copiar el código GenExpr para usar directamente en objetos Codebox o gen.codebox~ (Max 9).
 
 ![Diagrama de Bloques](Assets/screenshotDiagram.png)
 
@@ -129,4 +130,4 @@ Los tests validan los formatos VST3 y AU del plugin.
 
 ---
 
-*© 2025 Juan Carlos Blancas – JCBCompressor v0.9.992 beta*
+*© 2025 Juan Carlos Blancas – JCBExpander v0.9.992 beta*

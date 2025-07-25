@@ -15,24 +15,25 @@
 #include "../../Helpers/UndoableParameterHelper.h"
 
 //==============================================================================
-// CLASE PRINCIPAL PARA BUTTON ATTACHMENTS CON UNDO/REDO
+// CLASE PRINCIPAL PARA MULTI-STATE BUTTON ATTACHMENTS CON UNDO/REDO
 //==============================================================================
 
 /**
- * UndoableButtonAttachment - Sistema de attachment para botones con undo/redo
+ * UndoableMultiStateButtonAttachment - Sistema de attachment para botones de múltiples estados con undo/redo
  * 
  * Attachment especializado que provee funcionalidad de undo/redo para controles
- * de botón conectados a parámetros del plugin. Características principales:
+ * de botón con múltiples estados conectados a parámetros del plugin. Características principales:
  * - Integration con ParameterAttachment de JUCE para automation sync
  * - Manual undo/redo registration solo para user interactions
  * - Thread safety garantizado para message thread operations
- * - Support específico para filter order parameters (12/24 dB)
+ * - Support específico para filter order parameters (12/24/48 dB correspondientes a 0/1/2)
  * - Callback system para notificación de cambios de parámetros
+ * - Cicla entre estados al hacer click
  *
  * IMPORTANTE: Solo usar desde message thread (mouse/key callbacks)
  * APVTS con nullptr = no automatic undo, manual undo solo para clicks de usuario
  */
-class UndoableButtonAttachment : private juce::Button::Listener
+class UndoableMultiStateButtonAttachment : private juce::Button::Listener
 {
 public:
     //==========================================================================
@@ -45,9 +46,9 @@ public:
     // CONSTRUCTOR Y DESTRUCTOR
     //==========================================================================
     
-    UndoableButtonAttachment(juce::RangedAudioParameter& param,
-                           juce::Button& buttonToUse,
-                           juce::UndoManager* um = nullptr)
+    UndoableMultiStateButtonAttachment(juce::RangedAudioParameter& param,
+                                     juce::Button& buttonToUse,
+                                     juce::UndoManager* um = nullptr)
         : parameter(param),
           button(buttonToUse),
           undoManager(um),
@@ -61,11 +62,14 @@ public:
         // Configurar listener para cambios de botón
         button.addListener(this);
         
+        // Desactivar toggle automático - lo manejamos manualmente
+        button.setClickingTogglesState(false);
+        
         // Establecer estado inicial del botón
         attachment.sendInitialUpdate();
     }
     
-    ~UndoableButtonAttachment()
+    ~UndoableMultiStateButtonAttachment()
     {
         button.removeListener(this);
     }
@@ -80,14 +84,15 @@ private:
         // THREAD SAFETY: Button clicks siempre en message thread
         jassert (juce::MessageManager::existsAndIsCurrentThread());
         
-        // Cachear valor anterior antes del cambio (patrón helper estático)
+        // Obtener valor actual del parámetro
         float oldValue = parameter.getValue();
         
-        // Obtener estado actual del botón (ya toggled por setClickingTogglesState)
-        bool newState = button.getToggleState();
-        float newValue = newState ? 1.0f : 0.0f;
+        // Obtener valor actual del parámetro y ciclar al siguiente estado
+        int currentIntValue = static_cast<int>(oldValue + 0.5f); // Redondear para evitar errores de punto flotante
+        int nextIntValue = (currentIntValue + 1) % 3; // Ciclar entre 0, 1, 2
+        float newValue = static_cast<float>(nextIntValue);
         
-        // Actualizar parámetro para coincidir con estado del botón
+        // Actualizar parámetro
         attachment.setValueAsCompleteGesture(newValue);
         
         // Registrar undo usando helper estático (solución probada)
@@ -105,15 +110,33 @@ private:
     
     void updateButtonState(float newValue)
     {
-        // Actualizar estado del botón desde valor del parámetro (automation, preset loading, etc.)
-        bool shouldBeToggled = newValue >= 0.5f;
-        button.setToggleState(shouldBeToggled, juce::dontSendNotification);
+        // Actualizar texto del botón desde valor del parámetro (automation, preset loading, etc.)
+        int intValue = static_cast<int>(newValue + 0.5f); // Redondear para evitar errores de punto flotante
         
         // Actualizar texto del botón para parámetros de filter order
         juce::String paramId = parameter.getParameterID();
         if (paramId == "j_HPFORDER" || paramId == "k_LPFORDER")
         {
-            button.setButtonText(shouldBeToggled ? "24" : "12");
+            switch (intValue)
+            {
+                case 0:
+                    button.setButtonText("12");
+                    break;
+                case 1:
+                    button.setButtonText("24");
+                    break;
+                case 2:
+                    button.setButtonText("48");
+                    break;
+                default:
+                    button.setButtonText("12"); // Fallback
+                    break;
+            }
+        }
+        else
+        {
+            // Para otros parámetros, mostrar el número directamente
+            button.setButtonText(juce::String(intValue));
         }
     }
     
@@ -130,5 +153,5 @@ private:
     // MACRO JUCE - Memory management
     //==========================================================================
     
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UndoableButtonAttachment)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UndoableMultiStateButtonAttachment)
 };

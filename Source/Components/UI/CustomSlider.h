@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 #pragma once
@@ -93,7 +93,7 @@ public:
                 accentColour = slider.findColour(juce::Slider::rotarySliderOutlineColourId);
             }
             // DETECTOR (Verde) - #66FF66
-            else if (name == "detect" || id == "detect" || name == "algo" || id == "algo" ||
+            else if (name == "detect" || id == "detect" ||
                      name == "attack" || id == "attack" || name == "release" || id == "release" ||
                      name == "react" || id == "react" || name == "smo" || id == "smo") {
                 accentColour = juce::Colour(0xFF66FF66);
@@ -266,7 +266,6 @@ public:
             if (name == "react" || id == "react") return "REACT";
             if (name == "hpf" || id == "hpf") return "HPF";
             if (name == "lpf" || id == "lpf") return "LPF";
-            if (name == "detect" || id == "detect") return "ALGO";
             if (name == "thd" || id == "thd") return "THD";
             if (name == "ratio" || id == "ratio") return "RATIO";
             if (name == "range" || id == "range") return "RANGE";

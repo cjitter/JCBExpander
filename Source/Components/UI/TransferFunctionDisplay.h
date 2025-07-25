@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 #pragma once
@@ -19,12 +19,12 @@
 //==============================================================================
 
 /**
- * TransferFunctionDisplay para visualización de función de transferencia del compresor
+ * TransferFunctionDisplay para visualización de función de transferencia del expansor
  * 
  * Componente que muestra la entrada vs salida basada en parámetros
  * THD, RATIO y KNEE con capacidades interactivas. Características principales:
  * - Visualización en tiempo real de waveforms (envolventes) de entrada y salida
- * - Histograma de reducción de ganancia con thread safety
+ * - Histograma de gain reduction/expansion con thread safety
  * - Interacción directa para modificar parámetros (drag)
  * - Modos especiales: BYPASS, DELTA, SOLO SC
  * - Sistema de zoom con 2 niveles
@@ -70,6 +70,7 @@ public:
     void setThreshold(float thresholdDb);
     void setRatio(float ratio);
     void setKnee(float kneeDb);
+    void setRange(float rangeDb);
     void updateCurve();
     
     //==========================================================================
@@ -124,18 +125,20 @@ public:
     std::function<void(float)> onThresholdChange;
     std::function<void(float)> onRatioChange;
     std::function<void(float)> onKneeChange;
+    std::function<void(float)> onRangeChange;
     
     // Configuración de estado
     void setLogicStoppedState(bool stopped);
 
 private:
     //==========================================================================
-    // PARÁMETROS DEL COMPRESOR
+    // PARÁMETROS DEL EXPANSOR
     //==========================================================================
     
     float threshold = -18.0f;          // Umbral por defecto en dB
-    float ratio = 4.0f;                // Relación de compresión 
+    float ratio = 4.0f;                // Relación de expansión 
     float knee = 0.0f;                // Suavizado de la curva en dB
+    float range = -40.0f;              // Límite máximo de atenuación en dB
     
     //==========================================================================
     // DATOS DE WAVEFORM PARA VISUALIZACIÓN
@@ -183,7 +186,8 @@ private:
         None,
         Threshold,
         Knee,
-        Ratio
+        Ratio,
+        Range
     };
     
     DragMode currentDragMode = DragMode::None;        // Modo de arrastre actual
@@ -209,12 +213,13 @@ private:
     void drawAxes(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawTransferCurve(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawThresholdProjection(juce::Graphics& g, juce::Rectangle<float> bounds);
+    void drawRangeProjection(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawKneeArea(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawWaveformAreas(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawGainReductionHistory(juce::Graphics& g, juce::Rectangle<float> bounds);
 
     //==========================================================================
-    // FUNCIONES MATEMÁTICAS DEL COMPRESOR
+    // FUNCIONES MATEMÁTICAS DEL EXPANSOR
     //==========================================================================
     
     float calculateOutput(float inputDb);
@@ -228,6 +233,7 @@ private:
     juce::Point<float> pixelToDb(juce::Point<float> pixel, juce::Rectangle<float> bounds);
     DragMode detectDragMode(juce::Point<float> mousePos, juce::Rectangle<float> bounds);
     bool isNearThresholdLine(juce::Point<float> mousePos, juce::Rectangle<float> bounds);
+    bool isNearRangeLine(juce::Point<float> mousePos, juce::Rectangle<float> bounds);
     bool isNearKneeArea(juce::Point<float> mousePos, juce::Rectangle<float> bounds);
     bool isNearTransferCurve(juce::Point<float> mousePos, juce::Rectangle<float> bounds);
     

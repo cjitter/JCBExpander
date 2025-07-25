@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 
@@ -54,18 +54,18 @@ void TransferFunctionDisplay::paint(juce::Graphics& g)
     drawGrid(g, graphBounds);
     if (envelopeVisible && !soloSidechainActive && !bypassMode) {
         if (deltaMode) {
-            // En modo DELTA solo mostrar gain reduction
-            drawGainReductionHistory(g, graphBounds);  // Historia de reducción de ganancia
-        } else {
-            // Modo normal: mostrar todo
+            // En modo DELTA solo mostrar waveforms (sin histograma de gain reduction)
             drawWaveformAreas(g, graphBounds);  // Formas de onda de entrada y salida
-            drawGainReductionHistory(g, graphBounds);  // Historia de reducción de ganancia
+        } else {
+            // Modo normal: solo mostrar waveforms (sin histograma de gain reduction)
+            drawWaveformAreas(g, graphBounds);  // Formas de onda de entrada y salida
         }
     }
     
     // Solo mostrar elementos de compresión en modo normal
     if (!bypassMode && !deltaMode && !soloSidechainActive) {
         drawThresholdProjection(g, graphBounds);
+        drawRangeProjection(g, graphBounds);
         drawKneeArea(g, graphBounds);
         drawTransferCurve(g, graphBounds);
     }
@@ -104,6 +104,15 @@ void TransferFunctionDisplay::setKnee(float kneeDb)
     if (knee != kneeDb)
     {
         knee = kneeDb;
+        updateCurve();
+    }
+}
+
+void TransferFunctionDisplay::setRange(float rangeDb)
+{
+    if (range != rangeDb)
+    {
+        range = rangeDb;
         updateCurve();
     }
 }
@@ -315,6 +324,102 @@ void TransferFunctionDisplay::drawThresholdProjection(juce::Graphics& g, juce::R
     g.fillEllipse(thresholdX - 2, thresholdY - 2, 4, 4);
 }
 
+void TransferFunctionDisplay::drawRangeProjection(juce::Graphics& g, juce::Rectangle<float> bounds)
+{
+    // Determinar el rango de dB según el nivel de zoom
+    float minDb, maxDb;
+    switch (currentZoom)
+    {
+        case ZoomLevel::Normal:
+            minDb = -72.0f;
+            maxDb = 0.0f;
+            break;
+        case ZoomLevel::Zoomed:
+            minDb = -48.0f;
+            maxDb = 0.0f;
+            break;
+    }
+    
+    // Línea paralela a 1:1 desplazada por el valor RANGE
+    g.setColour(juce::Colours::white.withAlpha(0.8f));  // Blanco para RANGE
+    
+    juce::Path rangePath;
+    
+    // Dos puntos para dibujar la línea paralela: y = x + range
+    // Punto inicial: esquina inferior izquierda + range
+    float startInputDb = minDb;
+    float startOutputDb = startInputDb + range;
+    
+    // Punto final: esquina superior derecha + range  
+    float endInputDb = maxDb;
+    float endOutputDb = endInputDb + range;
+    
+    // Clipping completo para mantener la línea dentro del área visible
+    // Para una línea y = x + range, necesitamos verificar intersecciones con todos los bordes
+    
+    // Verificar si la línea es completamente invisible
+    float lineStartOutput = minDb + range;  // y cuando x = minDb
+    float lineEndOutput = maxDb + range;    // y cuando x = maxDb
+    
+    // Si toda la línea está fuera del rango visible, no dibujar
+    if ((lineStartOutput > maxDb && lineEndOutput > maxDb) || 
+        (lineStartOutput < minDb && lineEndOutput < minDb))
+    {
+        return; // Línea completamente fuera del área visible
+    }
+    
+    // Calcular puntos de intersección con los bordes del área visible
+    float clippedStartInputDb = startInputDb;
+    float clippedStartOutputDb = startOutputDb;
+    float clippedEndInputDb = endInputDb;
+    float clippedEndOutputDb = endOutputDb;
+    
+    // Clipping en borde superior (maxDb)
+    if (startOutputDb > maxDb) {
+        clippedStartInputDb = maxDb - range;  // Resolver: clippedStartInputDb + range = maxDb
+        clippedStartOutputDb = maxDb;
+    }
+    if (endOutputDb > maxDb) {
+        clippedEndInputDb = maxDb - range;
+        clippedEndOutputDb = maxDb;
+    }
+    
+    // Clipping en borde inferior (minDb)
+    if (startOutputDb < minDb) {
+        clippedStartInputDb = minDb - range;  // Resolver: clippedStartInputDb + range = minDb
+        clippedStartOutputDb = minDb;
+    }
+    if (endOutputDb < minDb) {
+        clippedEndInputDb = minDb - range;
+        clippedEndOutputDb = minDb;
+    }
+    
+    // Asegurar que los puntos de entrada también estén en el rango visible
+    clippedStartInputDb = juce::jlimit(minDb, maxDb, clippedStartInputDb);
+    clippedEndInputDb = juce::jlimit(minDb, maxDb, clippedEndInputDb);
+    
+    // Recalcular outputs después del clipping de inputs
+    clippedStartOutputDb = clippedStartInputDb + range;
+    clippedEndOutputDb = clippedEndInputDb + range;
+    
+    // Convertir a coordenadas de píxeles
+    auto clippedStartPoint = dbToPixel(clippedStartInputDb, clippedStartOutputDb, bounds);
+    auto clippedEndPoint = dbToPixel(clippedEndInputDb, clippedEndOutputDb, bounds);
+    
+    // Solo dibujar si tenemos una línea válida
+    if (clippedStartInputDb != clippedEndInputDb || clippedStartOutputDb != clippedEndOutputDb)
+    {
+        rangePath.startNewSubPath(clippedStartPoint);
+        rangePath.lineTo(clippedEndPoint);
+        
+        // Crear patrón discontinuo: 4 píxeles línea, 3 píxeles espacio
+        float dashLengths[] = {4.0f, 3.0f};
+        juce::PathStrokeType dashedStroke(1.5f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded);
+        dashedStroke.createDashedStroke(rangePath, rangePath, dashLengths, 2);
+        g.fillPath(rangePath);
+    }
+}
+
 void TransferFunctionDisplay::drawKneeArea(juce::Graphics& g, juce::Rectangle<float> bounds)
 {
     if (knee <= 0.0f) return; // No dibujar si knee es 0 (hard knee)
@@ -458,61 +563,77 @@ float TransferFunctionDisplay::calculateKneeOutput(float inputDb, float threshol
 }
 
 //==============================================================================
-// FUNCIONES MATEMÁTICAS DEL COMPRESOR
+// FUNCIONES MATEMÁTICAS DEL EXPANSOR
 //==============================================================================
 
 float TransferFunctionDisplay::calculateOutput(float inputDb)
 {
     inputDb = juce::jlimit(-72.0f, 0.0f, inputDb);
 
+    float output;
+
     if (knee <= 0.0f)
     {
-        // Hard knee
+        // Hard knee - EXPANDER LOGIC
         if (inputDb <= threshold)
-            return inputDb;
+            output = threshold + (inputDb - threshold) * ratio;  // Atenuar señales bajo threshold
         else
-            return threshold + (inputDb - threshold) / ratio;
-    }
-
-    // Soft knee
-    float kneeHalf = knee * 0.5f;
-    float kneeStart = threshold - kneeHalf;
-    float kneeEnd = threshold + kneeHalf;
-
-    if (inputDb <= kneeStart)
-    {
-        // Línea 1:1 (sin compresión)
-        return inputDb;
-    }
-    else if (inputDb >= kneeEnd)
-    {
-        // Línea comprimida
-        return threshold + (inputDb - threshold) / ratio;
+            output = inputDb;  // Señales sobre threshold pasan sin cambio
     }
     else
     {
-        // Dentro del knee: interpolación hermite cúbica
-        float t = (inputDb - kneeStart) / knee; // normalizar 0-1
+        // Soft knee - EXPANDER LOGIC
+        float kneeHalf = knee * 0.5f;
+        float kneeStart = threshold - kneeHalf;
+        float kneeEnd = threshold + kneeHalf;
 
-        // Puntos de conexión exactos
-        float y0 = kneeStart;  // punto inicial (línea 1:1)
-        float y1 = threshold + (kneeEnd - threshold) / ratio;  // punto final (línea comprimida)
+        if (inputDb <= kneeStart)
+        {
+            // Línea expandida (atenuada)
+            output = threshold + (inputDb - threshold) * ratio;
+        }
+        else if (inputDb >= kneeEnd)
+        {
+            // Línea 1:1 (sin expansión)
+            output = inputDb;
+        }
+        else
+        {
+            // Dentro del knee: interpolación hermite cúbica
+            float t = (inputDb - kneeStart) / knee; // normalizar 0-1
 
-        // Derivadas en los extremos (pendientes de las líneas)
-        float m0 = 1.0f;  // pendiente línea 1:1
-        float m1 = 1.0f / ratio;  // pendiente línea comprimida
+            // Puntos de conexión exactos para EXPANDER
+            float y0 = threshold + (kneeStart - threshold) * ratio;  // punto inicial (línea expandida)
+            float y1 = kneeEnd;  // punto final (línea 1:1)
 
-        // Interpolación Hermite que respeta puntos y derivadas
-        float t2 = t * t;
-        float t3 = t2 * t;
+            // Derivadas en los extremos (pendientes de las líneas)
+            float m0 = ratio;  // pendiente línea expandida
+            float m1 = 1.0f;   // pendiente línea 1:1
 
-        float h00 = 2*t3 - 3*t2 + 1;
-        float h10 = t3 - 2*t2 + t;
-        float h01 = -2*t3 + 3*t2;
-        float h11 = t3 - t2;
+            // Interpolación Hermite que respeta puntos y derivadas
+            float t2 = t * t;
+            float t3 = t2 * t;
 
-        return h00 * y0 + h10 * knee * m0 + h01 * y1 + h11 * knee * m1;
+            float h00 = 2*t3 - 3*t2 + 1;
+            float h10 = t3 - 2*t2 + t;
+            float h01 = -2*t3 + 3*t2;
+            float h11 = t3 - t2;
+
+            output = h00 * y0 + h10 * knee * m0 + h01 * y1 + h11 * knee * m1;
+        }
     }
+
+    // Aplicar RANGE como línea paralela móvil a 1:1
+    // Línea paralela: output_range = input + range
+    float rangeLineOutput = inputDb + range;
+    
+    // La función se "corta" por la línea del RANGE si va por debajo
+    if (output < rangeLineOutput)
+    {
+        output = rangeLineOutput;
+    }
+    
+    return output;
 }
 
 
@@ -739,7 +860,7 @@ void TransferFunctionDisplay::updateWaveformData(const float* inputSamples, cons
         }
         
         
-        gainReductionBuffer[writeIndex] = juce::jmax(0.0f, gainReduction);
+        gainReductionBuffer[writeIndex] = gainReduction;  // Allow negative values for expander
     }
     
     // Solo escribir UN valor por llamada (no múltiples)
@@ -749,7 +870,7 @@ void TransferFunctionDisplay::updateWaveformData(const float* inputSamples, cons
     hasWaveformData.store(true);
 }
 
-void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples, const float* processedSamples, const float* gainReductionSamples, int numSamples)
+void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples, const float* processedSamples, const float* /*gainReductionSamples*/, int numSamples)
 {
     if (numSamples <= 0) return;
     
@@ -847,16 +968,17 @@ void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples
             float processedDb = maxProcessed > 0.0001f ?
                 20.0f * std::log10(maxProcessed) : -80.0f;
             
+            // SIEMPRE escribir los datos originales primero
             inputWaveformBuffer[writeIndex] = inputDb;
             processedWaveformBuffer[writeIndex] = processedDb;
             
-            // USAR LA GAIN REDUCTION REAL DE GEN~ EN LUGAR DE CALCULARLA
-            float gainReduction = -gainReductionSamples[i]; // Negativo porque Gen~ da valores negativos en dB
-            
-            // Condición especial para ratio 1:1 - no debe haber gain reduction
+            // DEBUG TEMPORAL: Evitar condiciones que hagan las envolventes idénticas
+            // para poder ver ambas envolventes por separado
+            /*
+            // Ya no procesamos gain reduction aquí - solo waveforms
+            // Condición especial para ratio 1:1 - las envolventes deben ser idénticas
             if (ratio <= 1.01f) // Pequeño margen para errores de punto flotante
             {
-                gainReduction = 0.0f;
                 // Forzar que las envolventes sean idénticas cuando ratio es 1:1
                 processedDb = inputDb;
                 processedWaveformBuffer[writeIndex] = inputDb;
@@ -866,7 +988,6 @@ void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples
             // Si la señal está por debajo de (threshold - knee), no debería haber compresión
             if (inputDb < (threshold - knee))
             {
-                gainReduction = 0.0f;
                 // Forzar que las envolventes sean idénticas cuando no hay compresión
                 processedDb = inputDb;
                 processedWaveformBuffer[writeIndex] = inputDb;
@@ -876,36 +997,12 @@ void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples
             // En este caso, no debería haber compresión visible
             if (extKeyActive && sidechainLevel < -60.0f)
             {
-                gainReduction = 0.0f;
                 processedDb = inputDb;
                 processedWaveformBuffer[writeIndex] = inputDb;
             }
+            */
             
-            // Aplicar suavizado al gain reduction para visualización más estable
-            gainReduction = juce::jmax(0.0f, gainReduction);
-            
-            // Factor de suavizado por defecto para attack del gain reduction
-            float grAttackFactor = 0.5f;  // Valor medio para respuesta equilibrada
-            
-            // Suavizado del gain reduction con factores independientes para attack y release
-            float currentGRSmoothed = gainReductionSmoothed.load(std::memory_order_relaxed);
-            float newGRSmoothed;
-            
-            if (gainReduction > currentGRSmoothed)
-            {
-                // Attack con suavizado basado en el parámetro Attack
-                newGRSmoothed = currentGRSmoothed * grAttackFactor +
-                              gainReduction * (1.0f - grAttackFactor);
-            }
-            else
-            {
-                // Release suavizado para evitar saltos
-                newGRSmoothed = currentGRSmoothed * grSmoothingFactor +
-                              gainReduction * (1.0f - grSmoothingFactor);
-            }
-            
-            gainReductionSmoothed.store(newGRSmoothed, std::memory_order_relaxed);
-            gainReductionBuffer[writeIndex] = newGRSmoothed;
+            // Ya no procesamos ni almacenamos gain reduction - solo waveforms
         }
         
         // Solo escribir UN valor por llamada (no múltiples)
@@ -974,42 +1071,43 @@ void TransferFunctionDisplay::drawWaveformAreas(juce::Graphics& g, juce::Rectang
         
         // Calcular posiciones Y usando el rango de zoom actual
         // Añadir un pequeño offset para evitar que las envolventes toquen exactamente el borde superior
-        float topOffset = 2.0f; // 2 píxeles de margen desde el borde superior
+        float topOffset = 5.0f; // 5 píxeles de margen desde el borde superior (bajado desde 2.0f)
         float inputY = juce::jmap(inputDb, minDb, maxDb, bounds.getBottom(), bounds.getY() + topOffset);
         float processedY = juce::jmap(processedDb, minDb, maxDb, bounds.getBottom(), bounds.getY() + topOffset);
         
-        // Amplificar visualmente la diferencia cuando hay reducción
-        float reduction = inputDb - processedDb; // Positivo cuando hay reducción
-        // Solo aplicar amplificación visual si el ratio es mayor que 1:1
-        if (reduction > 0.05f && ratio > 1.01f) {
-            // Factor de amplificación variable según la cantidad de reducción
-            // Más amplificación para reducciones pequeñas (para hacerlas más visibles)
+        // Amplificar visualmente la diferencia para EXPANDER
+        float expansion = inputDb - processedDb; // Para expansor: positivo cuando hay atenuación (expansión)
+        // Solo aplicar amplificación visual si el ratio es menor que 1:1 (expansión)
+        if (expansion > 0.05f && ratio < 0.99f) {
+            // Factor de amplificación variable según la cantidad de expansión
+            // Más amplificación para expansiones pequeñas (para hacerlas más visibles)
             float visualAmplification;
-            if (reduction < 3.0f) {
-                // Para reducciones pequeñas (0-3dB), amplificación aumentada
+            if (expansion < 3.0f) {
+                // Para expansiones pequeñas (0-3dB), amplificación aumentada
                 visualAmplification = 3.0f;
-            } else if (reduction < 6.0f) {
-                // Para reducciones medias (3-6dB), amplificación moderada
+            } else if (expansion < 6.0f) {
+                // Para expansiones medias (3-6dB), amplificación moderada
                 visualAmplification = 2.5f;
             } else {
-                // Para reducciones grandes (>6dB), menos amplificación
+                // Para expansiones grandes (>6dB), menos amplificación
                 visualAmplification = 2.0f;
             }
             
             float midPoint = (inputY + processedY) * 0.5f;
             float separation = (inputY - processedY) * visualAmplification;
             
+            // Para expansor: processed debe estar más abajo (más atenuado) que input
             // Mantener los valores dentro de los límites
-            processedY = juce::jlimit(bounds.getY(), bounds.getBottom(),
-                                     midPoint + separation * 0.5f);
             inputY = juce::jlimit(bounds.getY(), bounds.getBottom(),
                                  midPoint - separation * 0.5f);
+            processedY = juce::jlimit(bounds.getY(), bounds.getBottom(),
+                                     midPoint + separation * 0.5f);
         }
         
         // Sin fade en los extremos - usar todo el ancho disponible
         // Limitar con pequeño margen para evitar artefactos en los bordes
-        inputY = juce::jlimit(bounds.getY() + 1.0f, bounds.getBottom() - 1.0f, inputY);
-        processedY = juce::jlimit(bounds.getY() + 1.0f, bounds.getBottom() - 1.0f, processedY);
+        inputY = juce::jlimit(bounds.getY() + 3.0f, bounds.getBottom() - 1.0f, inputY);
+        processedY = juce::jlimit(bounds.getY() + 3.0f, bounds.getBottom() - 1.0f, processedY);
         
         inputPoints.push_back({x, inputY});
         processedPoints.push_back({x, processedY});
@@ -1049,36 +1147,36 @@ void TransferFunctionDisplay::drawWaveformAreas(juce::Graphics& g, juce::Rectang
     
     // Dibujar sin máscara para usar todo el ancho
     
-    // 1. PRIMERO dibujar área de entrada (DETRÁS) - Morado translúcido
-    // Se dibuja primero para que la salida azul se vea encima cuando haya compresión
-    if (!processedAreaPath.isEmpty())
+    // 1. PRIMERO dibujar área de ENTRADA (DETRÁS) - Morado translúcido  
+    // CORRECCIÓN: inputAreaPath es realmente para entrada, processedAreaPath para salida
+    if (!inputAreaPath.isEmpty())
     {
-        // Gradiente vertical para entrada - MORADO MÁS TRANSLÚCIDO
-        juce::ColourGradient processedGradient(
-            juce::Colour(0x9C, 0x27, 0xB0).withAlpha(0.25f * currentFadeOutFactor), bounds.getCentreX(), bounds.getY(),
-            juce::Colour(0x7B, 0x1F, 0xA2).withAlpha(0.15f * currentFadeOutFactor), bounds.getCentreX(), bounds.getBottom(),
+        // Gradiente vertical para ENTRADA - MORADO MÁS VISIBLE
+        juce::ColourGradient inputGradient(
+            juce::Colour(0x9C, 0x27, 0xB0).withAlpha(0.6f * currentFadeOutFactor), bounds.getCentreX(), bounds.getY(),
+            juce::Colour(0x7B, 0x1F, 0xA2).withAlpha(0.4f * currentFadeOutFactor), bounds.getCentreX(), bounds.getBottom(),
             false
         );
-        g.setGradientFill(processedGradient);
-        g.fillPath(processedAreaPath);
+        g.setGradientFill(inputGradient);
+        g.fillPath(inputAreaPath);
         
-        // Línea superior morada para entrada - más sutil
-        g.setColour(juce::Colour(0x9C, 0x27, 0xB0).withAlpha(0.4f * currentFadeOutFactor));
-        juce::Path processedLine;
-        if (!processedPoints.empty())
+        // Línea superior morada para ENTRADA - más visible
+        g.setColour(juce::Colour(0x9C, 0x27, 0xB0).withAlpha(0.8f * currentFadeOutFactor));
+        juce::Path inputLine;
+        if (!inputPoints.empty())
         {
-            processedLine.startNewSubPath(processedPoints[0]);
-            for (size_t i = 1; i < processedPoints.size(); ++i)
+            inputLine.startNewSubPath(inputPoints[0]);
+            for (size_t i = 1; i < inputPoints.size(); ++i)
             {
-                processedLine.lineTo(processedPoints[i]);
+                inputLine.lineTo(inputPoints[i]);
             }
-            g.strokePath(processedLine, juce::PathStrokeType(1.5f));  // Línea más gruesa para entrada
+            g.strokePath(inputLine, juce::PathStrokeType(1.5f));  // Línea más gruesa para entrada
         }
     }
     
-    // 2. DESPUÉS dibujar área de salida procesada (ENCIMA) - Usando gradiente del medidor de salida
-    // Se dibuja encima para mostrar la compresión aplicada
-    if (!inputAreaPath.isEmpty())
+    // 2. DESPUÉS dibujar área de SALIDA PROCESADA (ENCIMA) - Usando gradiente del medidor de salida
+    // CORRECCIÓN: processedAreaPath es realmente para salida procesada  
+    if (!processedAreaPath.isEmpty())
     {
         // Usar el mismo gradiente que los medidores de salida
         const juce::Colour outputBlue = juce::Colour(0xFF6495ED);     // Azul de OUTPUT
@@ -1097,19 +1195,19 @@ void TransferFunctionDisplay::drawWaveformAreas(juce::Graphics& g, juce::Rectang
         outputGradient.addColour(0.85, deepBlue.interpolatedWith(darkPurple, 0.5f).withAlpha(0.45f * currentFadeOutFactor));
         
         g.setGradientFill(outputGradient);
-        g.fillPath(inputAreaPath);
+        g.fillPath(processedAreaPath);
         
-        // Línea superior con el color azul OUTPUT
+        // Línea superior con el color azul OUTPUT para SALIDA PROCESADA
         g.setColour(outputBlue.withAlpha(0.95f * currentFadeOutFactor));
-        juce::Path inputLine;
-        if (!inputPoints.empty())
+        juce::Path processedLine;
+        if (!processedPoints.empty())
         {
-            inputLine.startNewSubPath(inputPoints[0]);
-            for (size_t i = 1; i < inputPoints.size(); ++i)
+            processedLine.startNewSubPath(processedPoints[0]);
+            for (size_t i = 1; i < processedPoints.size(); ++i)
             {
-                inputLine.lineTo(inputPoints[i]);
+                processedLine.lineTo(processedPoints[i]);
             }
-            g.strokePath(inputLine, juce::PathStrokeType(1.0f));  // Línea más delgada para salida
+            g.strokePath(processedLine, juce::PathStrokeType(1.0f));  // Línea más delgada para salida
         }
     }
     
@@ -1149,6 +1247,9 @@ void TransferFunctionDisplay::mouseDown(const juce::MouseEvent& e)
         case DragMode::Ratio:
             dragStartValue = ratio;
             break;
+        case DragMode::Range:
+            dragStartValue = range;
+            break;
         default:
             break;
     }
@@ -1187,6 +1288,14 @@ void TransferFunctionDisplay::mouseDrag(const juce::MouseEvent& e)
             if (onRatioChange) onRatioChange(newRatio);
             break;
         }
+        case DragMode::Range: {
+            // Arrastrar horizontalmente para cambiar range
+            float deltaDb = juce::jmap(deltaPixels.x, 0.0f, bounds.getWidth(), 0.0f, 60.0f);
+            float newRange = juce::jlimit(-60.0f, 0.0f, range + deltaDb);
+            setRange(newRange);
+            if (onRangeChange) onRangeChange(newRange);
+            break;
+        }
         default:
             break;
     }
@@ -1205,10 +1314,14 @@ void TransferFunctionDisplay::mouseUp(const juce::MouseEvent&)
 
 TransferFunctionDisplay::DragMode TransferFunctionDisplay::detectDragMode(juce::Point<float> mousePos, juce::Rectangle<float> bounds)
 {
-    // Prioridad: Threshold > Knee > Ratio
+    // Prioridad: Threshold > Range > Knee > Ratio
     if (isNearThresholdLine(mousePos, bounds)) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         return DragMode::Threshold;
+    }
+    if (isNearRangeLine(mousePos, bounds)) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        return DragMode::Range;
     }
     if (isNearKneeArea(mousePos, bounds)) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
@@ -1244,6 +1357,15 @@ bool TransferFunctionDisplay::isNearThresholdLine(juce::Point<float> mousePos, j
     
     float thresholdX = juce::jmap(threshold, minDb, maxDb, bounds.getX(), bounds.getRight());
     return std::abs(mousePos.x - thresholdX) < 8.0f; // Tolerancia de 8 píxeles
+}
+
+bool TransferFunctionDisplay::isNearRangeLine(juce::Point<float> mousePos, juce::Rectangle<float> bounds)
+{
+    // Calcular si el mouse está cerca de la línea diagonal del range
+    auto dbPos = pixelToDb(mousePos, bounds);
+    float rangeLineOutput = dbPos.x + range;
+    float distanceToRangeLine = std::abs(dbPos.y - rangeLineOutput);
+    return distanceToRangeLine < 3.0f; // Tolerancia de 3 dB
 }
 
 bool TransferFunctionDisplay::isNearKneeArea(juce::Point<float> mousePos, juce::Rectangle<float> bounds)
@@ -1311,20 +1433,29 @@ void TransferFunctionDisplay::drawGainReductionHistory(juce::Graphics& g, juce::
         float x = bounds.getX() + normalizedTime * bounds.getWidth();
         
         // Posición Y - mapear GR al rango vertical según el zoom
-        float normalizedGR = grDb / maxGainReduction;
+        // Para expansor: manejar valores positivos (amplificación) y negativos (atenuación)
+        float normalizedGR;
         float y;
         
-        if (useNonLinearScale)
-        {
-            // Aplicar escala no lineal para expandir visualmente el rango 0 a -6 dB
-            // pow con exponente < 1 expande los valores pequeños
-            float expandedGR = std::pow(normalizedGR, 0.75f);  // pow 0.75 para expansión menos extrema
-            y = bounds.getY() + expandedGR * bounds.getHeight();
-        }
-        else
-        {
-            // Escala lineal normal
-            y = bounds.getY() + normalizedGR * bounds.getHeight();
+        if (grDb >= 0.0f) {
+            // Valores positivos (amplificación) - mapear a la mitad superior
+            normalizedGR = juce::jlimit(0.0f, 1.0f, grDb / maxGainReduction);
+            y = bounds.getY() + (0.5f - normalizedGR * 0.5f) * bounds.getHeight();
+        } else {
+            // Valores negativos (atenuación) - mapear a la mitad inferior
+            normalizedGR = juce::jlimit(0.0f, 1.0f, std::abs(grDb) / maxGainReduction);
+            
+            if (useNonLinearScale)
+            {
+                // Aplicar escala no lineal para expandir visualmente el rango 0 a -6 dB
+                float expandedGR = std::pow(normalizedGR, 0.75f);  
+                y = bounds.getY() + (0.5f + expandedGR * 0.5f) * bounds.getHeight();
+            }
+            else
+            {
+                // Escala lineal normal
+                y = bounds.getY() + (0.5f + normalizedGR * 0.5f) * bounds.getHeight();
+            }
         }
         
         grPoints.push_back({x, y});
@@ -1466,4 +1597,9 @@ void TransferFunctionDisplay::drawGainReductionHistory(juce::Graphics& g, juce::
             g.strokePath(grLine, juce::PathStrokeType(2.0f)); // Línea un poco más gruesa para mejor visibilidad
         }
     }
+    
+    // Dibujar línea central de referencia (0 dB - sin ganancia ni atenuación)
+    float centerY = bounds.getY() + bounds.getHeight() * 0.5f;
+    g.setColour(DarkTheme::textSecondary.withAlpha(0.3f * currentFadeOutFactor));
+    g.drawHorizontalLine(static_cast<int>(centerY), bounds.getX(), bounds.getRight());
 }

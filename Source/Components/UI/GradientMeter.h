@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 #pragma once
@@ -459,7 +459,7 @@ public:
     
     void updateLevel()
     {
-        // Obtener el valor actual sin ningún suavizado
+        // REVERTIDO: Obtener el valor actual sin suavizado - comportamiento original
         const float currentValue = valueSupplier();
         targetValue.store(currentValue, std::memory_order_relaxed);
         smoothedValue.store(currentValue, std::memory_order_relaxed);  // Valor directo sin procesar
@@ -467,8 +467,10 @@ public:
         // Peak sin hold - sigue el valor instantáneamente
         peakValue.store(currentValue, std::memory_order_relaxed);
         
-        // Evitar valores muy pequeños
-        if (std::abs(currentValue) < 0.01f) {
+        // Reseteo cuando no hay reducción significativa
+        // 0 dB = sin reducción, valores negativos = reducción activa  
+        if (std::abs(currentValue) < 0.05f) {
+            // Asegurar que está completamente en reposo (sin barra)
             smoothedValue.store(0.0f, std::memory_order_relaxed);
             peakValue.store(0.0f, std::memory_order_relaxed);
         }
@@ -484,41 +486,51 @@ public:
     {
         auto bounds = getLocalBounds().toFloat().reduced(1.5f);
         
-        // Sin fondo - completamente transparente
-        // Solo dibujar un borde sutil para delimitar el área
-        g.setColour(DarkTheme::border.withAlpha(0.3f));
-        g.drawRoundedRectangle(bounds, 2.0f, 0.5f);
+        // Fondo oscuro del medidor
+        g.setColour(DarkTheme::meterBackground.withAlpha(0.8f));
+        g.fillRoundedRectangle(bounds, 2.0f);
         
-        // Medidor de reducción de ganancia para compresor
-        // Usar el valor suavizado para evitar saltos
+        // NUEVO: Fondo con gradiente azul (como base del slider)
+        auto blueBgGradient = DarkTheme::createBlueGainReductionGradient(bounds);
+        g.setGradientFill(blueBgGradient);
+        g.fillRoundedRectangle(bounds.reduced(1.0f), 1.5f);
+        
+        // Medidor de reducción de ganancia - FINAL: barra blanca muestra reducción
+        // 0 dB = sin reducción/reposo = sin barra (oscuro)  
+        // -72 dB = máxima reducción = barra llena (gradiente visible)
         const float currentSmoothedValue = smoothedValue.load(std::memory_order_relaxed);
-        if (currentSmoothedValue < -0.1f) { // Solo mostrar si hay reducción significativa
+        
+        // Mapear valores dB del procesador (0 a -72 dB) a altura de barra  
+        // currentSmoothedValue ahora viene en dB desde el MovingAverage4800
+        float barHeight;
+        
+        // Rango de trabajo: 0 dB (sin reducción) a -72 dB (máxima reducción)
+        const float minReduction = 0.0f;    // Sin reducción (sin barra)
+        const float maxReduction = -72.0f;  // Máxima reducción (barra llena)
+        
+        // Mapeo correcto: valores más negativos = más barra blanca
+        float fillRatio = juce::jmap(currentSmoothedValue, minReduction, maxReduction, 0.0f, 1.0f);
+        fillRatio = juce::jlimit(0.0f, 1.0f, fillRatio);
+        
+        // Calcular altura de barra (0 dB = sin barra, -72 dB = barra llena)
+        barHeight = (getHeight() - 3) * fillRatio;
+        
+        // Dibujar el gradiente desde arriba con la altura calculada - BARRA MÁS ESTRECHA
+        if (barHeight > 1.0f) {
             g.setGradientFill(gradient);
-            // Mapear de dB a píxeles: escala variable según zoom
-            // Normal: 0dB->0pixels, -72dB->full height (igual que histograma)
-            // Zoomed: 0dB->0pixels, -48dB->full height (igual que histograma)
-            float maxReduction = isZoomed ? -48.0f : -72.0f;
-            const auto scaledY = juce::jmap(currentSmoothedValue, 0.f, maxReduction, 0.f, static_cast<float>(getHeight() - 3));
+            
+            // Crear barra más estrecha (40% del ancho original) centrada
             auto fillBounds = bounds.reduced(1.0f);
-            g.fillRoundedRectangle(fillBounds.removeFromTop(scaledY), 1.5f);
+            float barWidth = fillBounds.getWidth() * 0.4f;
+            float xOffset = (fillBounds.getWidth() - barWidth) * 0.5f;
+            auto narrowFillBounds = fillBounds.withTrimmedLeft(xOffset).withTrimmedRight(xOffset);
+            
+            auto barRect = narrowFillBounds.removeFromTop(barHeight);
+            g.fillRoundedRectangle(barRect, 1.5f);
         }
         
-        // Indicador de peak - línea horizontal en el punto de máxima reducción
-        const float currentPeakValue = peakValue.load(std::memory_order_relaxed);
-        if (currentPeakValue < -0.1f) { // Solo mostrar si hay reducción significativa
-            float maxReduction = isZoomed ? -48.0f : -72.0f;
-            const auto peakY = juce::jmap(currentPeakValue, 0.f, maxReduction, 0.f, static_cast<float>(getHeight() - 3));
-            
-            // Línea principal blanca brillante
-            g.setColour(juce::Colours::white.withAlpha(0.9f));
-            g.fillRect(bounds.getX() + 1, bounds.getY() + peakY - 1, bounds.getWidth() - 2, 2.0f);
-            
-            // Halo/glow amarillo para mayor visibilidad
-            g.setColour(juce::Colours::yellow.withAlpha(0.3f));
-            g.fillRect(bounds.getX() + 1, bounds.getY() + peakY - 2, bounds.getWidth() - 2, 4.0f);
-        }
         
-        // Borde
+        // Borde exterior
         g.setColour(DarkTheme::border.withAlpha(0.4f));
         g.drawRoundedRectangle(bounds, 2.0f, 0.5f);
     }

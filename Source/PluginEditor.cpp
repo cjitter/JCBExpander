@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 
@@ -27,13 +27,13 @@
 //==============================================================================
 // CONSTRUCTOR Y DESTRUCTOR
 //==============================================================================
-JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompressorAudioProcessor& p, juce::UndoManager& um)
+JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAudioProcessor& p, juce::UndoManager& um)
     : AudioProcessorEditor (&p), 
       processor (p), 
       undoManager (um),
       inputMeterL([&p](){ return p.getRmsInputValue(0); }),
       inputMeterR([&p](){ return p.getRmsInputValue(1); }),
-      grMeter([this](){ return maxGainReductionFromBuffer; }),
+      grMeter([&p](){ return p.getGainReductionValue(0); }),
       outputMeterL([&p](){ return p.getRmsOutputValue(0); }),
       outputMeterR([&p](){ return p.getRmsOutputValue(1); }),
       scMeterL([&p](){ return p.getSCValue(0); }), // SC meter L
@@ -66,7 +66,7 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     if (hostInfo.isLogic()) {
         titleText = "v0.9.992 beta";  // Solo versión para Logic Pro
     } else {
-        titleText = "JCBCompressor v0.9.992 beta";  // Nombre completo para otros DAWs
+        titleText = "JCBExpander v0.9.992 beta";  // Nombre completo para otros DAWs
     }
     
     titleLink.setButtonText(titleText);
@@ -128,6 +128,7 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     transferDisplay.setThreshold(thresholdDB);
     transferDisplay.setRatio(leftTopKnobs.ratioSlider.getValue());
     transferDisplay.setKnee(leftTopKnobs.kneeSlider.getValue());
+    transferDisplay.setRange(rightTopControls.rangeSlider.getValue());
     
     // Conectar callbacks del transfer display para actualizar knobs
     transferDisplay.onThresholdChange = [this](float newThreshold) {
@@ -142,6 +143,10 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
         leftTopKnobs.kneeSlider.setValue(newKnee, juce::sendNotification);
         handleParameterChange();  // Marcar preset como modificado
     };
+    transferDisplay.onRangeChange = [this](float newRange) {
+        rightTopControls.rangeSlider.setValue(newRange, juce::sendNotification);
+        handleParameterChange();  // Marcar preset como modificado
+    };
     
     // Updates iniciales
     updateTransferDisplay();
@@ -150,8 +155,7 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     transferFunctionListener = std::make_unique<TransferFunctionParameterListener>(this);
     processor.apvts.addParameterListener("b_THD", transferFunctionListener.get());
     processor.apvts.addParameterListener("c_RATIO", transferFunctionListener.get());
-    processor.apvts.addParameterListener("h_KNEE", transferFunctionListener.get());
-    processor.apvts.addParameterListener("s_AUTORELEASE", transferFunctionListener.get());
+    processor.apvts.addParameterListener("q_KNEE", transferFunctionListener.get());
     
     // Configurar estado inicial del idioma
     if (processor.getTooltipLanguageEnglish()) {
@@ -170,13 +174,12 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     updateAllTooltips();
     
     // Configurar AUTO RELEASE button
-    updateARButtonText();    // Establecer texto inicial basado en el estado
-    updateRelSliderAlpha();  // Establecer alpha inicial del slider REL basado en el estado AR
     
     // Configurar estados iniciales
     bool initialDeltaState = processor.apvts.getRawParameterValue("v_DELTA")->load() > 0.5f;
     parameterButtons.deltaButton.setButtonText("DELTA");  // Texto siempre igual
     transferDisplay.setEnvelopeVisible(!initialDeltaState);  // Ocultar envolventes si DELTA está ON
+    transferDisplay.setVisible(!initialDeltaState);  // Ocultar todo el componente si DELTA está ON
     if (initialDeltaState) {
         // Configurar medidores en modo delta
         inputMeterL.setDeltaMode(true);
@@ -252,6 +255,7 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     }
     
     updateButtonStates();
+    updateFilterButtonText();  // Establecer texto inicial de botones de filtro
     
     // Establecer estado inicial de SOLO SIDECHAIN en transfer display
     transferDisplay.setSoloSidechain(sidechainControls.soloScButton.getToggleState());
@@ -269,7 +273,7 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     
     // Actualizar valores de sliders desde APVTS para evitar problemas al cargar sesión
     // Usar MessageManager::callAsync para ejecución thread-safe sin delay
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<JCBCompressorAudioProcessorEditor>(this)]() {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<JCBExpanderAudioProcessorEditor>(this)]() {
         if (safeThis) {
             safeThis->updateSliderValues();
         }
@@ -290,11 +294,10 @@ JCBCompressorAudioProcessorEditor::JCBCompressorAudioProcessorEditor (JCBCompres
     
     
     // Inicializar texto del botón AR basado en el estado actual del parámetro
-    updateARButtonText();
     
 }
 
-JCBCompressorAudioProcessorEditor::~JCBCompressorAudioProcessorEditor()
+JCBExpanderAudioProcessorEditor::~JCBExpanderAudioProcessorEditor()
 {
     // CRÍTICO: Detener timer PRIMERO para prevenir crashes durante destrucción
     stopTimer();
@@ -304,8 +307,7 @@ JCBCompressorAudioProcessorEditor::~JCBCompressorAudioProcessorEditor()
     {
         processor.apvts.removeParameterListener("b_THD", transferFunctionListener.get());
         processor.apvts.removeParameterListener("c_RATIO", transferFunctionListener.get());
-        processor.apvts.removeParameterListener("h_KNEE", transferFunctionListener.get());
-        processor.apvts.removeParameterListener("s_AUTORELEASE", transferFunctionListener.get());
+        processor.apvts.removeParameterListener("q_KNEE", transferFunctionListener.get());
     }
     
     setLookAndFeel(nullptr);
@@ -314,12 +316,12 @@ JCBCompressorAudioProcessorEditor::~JCBCompressorAudioProcessorEditor()
 //==============================================================================
 // OVERRIDES DE JUCE  
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::paint (juce::Graphics& g)
+void JCBExpanderAudioProcessorEditor::paint (juce::Graphics& g)
 {
     // El background se maneja por el componente backgroundImage
 }
 
-void JCBCompressorAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
+void JCBExpanderAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
 {
     // Usar las mismas coordenadas que la transfer function display
     float x = 460.0f * 700.0f / 1247.0f;  // ≈ 258
@@ -378,7 +380,7 @@ void JCBCompressorAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
     }
 }
 
-void JCBCompressorAudioProcessorEditor::resized()
+void JCBExpanderAudioProcessorEditor::resized()
 {
     // Guardar tamaño de ventana
     processor.setSavedSize({getWidth(), getHeight()});
@@ -412,8 +414,8 @@ void JCBCompressorAudioProcessorEditor::resized()
     // Sliders de trim de sidechain superpuestos a los medidores de sidechain
     scTrimSlider.setBounds(getScaledBounds(24, 40, 22, 130));  // Altura expandida para TextBox integrado
     
-    // Medidor GR (centro-derecha) - ancho aumentado para mejor visibilidad
-    grMeter.setBounds(getScaledBounds(440, 48, 6, 103));
+    // Medidor GR (centro-derecha) - más delgado y alto, posición final ajustada
+    grMeter.setBounds(getScaledBounds(436, 48, 5, 105));
     
     // Medidores de salida (lado derecho)
     outputMeterL.setBounds(getScaledBounds(677, 42, 12, 117));
@@ -430,30 +432,28 @@ void JCBCompressorAudioProcessorEditor::resized()
     float h = 205.0f * 200.0f / 353.0f - 5.0f;
     transferDisplay.setBounds(getScaledBounds(x, y, w, h));
     // === LEFT SIDE KNOBS === (Between SC meters and transfer function)
-    // Top row - THD, RATIO, KNEE, PARAL
+    // Top row - THD, RANGE, RATIO, KNEE
     leftTopKnobs.thdSlider.setBounds(getScaledBounds(50, 48, 53, 53));
-    leftTopKnobs.ratioSlider.setBounds(getScaledBounds(100, 48, 53, 53));
-    leftTopKnobs.kneeSlider.setBounds(getScaledBounds(150, 48, 53, 53));
-    leftBottomKnobs.parallSlider.setBounds(getScaledBounds(200, 100, 53, 53));  // PARAL en la fila inferior
+    rightTopControls.rangeSlider.setBounds(getScaledBounds(100, 48, 53, 53));  // Moved from 475 to 100
+    leftTopKnobs.ratioSlider.setBounds(getScaledBounds(150, 48, 53, 53));      // Moved from 100 to 150
+    leftTopKnobs.kneeSlider.setBounds(getScaledBounds(200, 48, 53, 53));       // Moved from 150 to 200
     // (200, 43, 53, 53)
 
     // Bottom row - D/W, LA, CLIP (AGAIN está en fila superior)
     leftBottomKnobs.drywetSlider.setBounds(getScaledBounds(50, 100, 53, 53));
     leftBottomKnobs.lookaheadSlider.setBounds(getScaledBounds(100, 100, 53, 53));  // LA → x=100
-    leftTopKnobs.againSlider.setBounds(getScaledBounds(200, 48, 53, 53));
     leftBottomKnobs.clipSlider.setBounds(getScaledBounds(150, 100, 53, 53));  // CLIP → x=150
     // (150, 100, 53, 53)
 
     // === RIGHT SIDE CONTROLS ===
-    // Top row - ALGO and REACT knobs (REACT alineado con REL)
-    rightTopControls.algoSlider.setBounds(getScaledBounds(475, 48, 53, 53));
-    rightTopControls.reactSlider.setBounds(getScaledBounds(529, 48, 53, 53));  // Alineado con REL
-    rightTopControls.smoothSlider.setBounds(getScaledBounds(581, 48, 53, 53));  // SMOOTH knob en posición normal
+    // Top row - REACT, SMOOTH knobs (RANGE moved to left side)
+    rightTopControls.reactSlider.setBounds(getScaledBounds(475, 48, 53, 53));  // Moved from 529 to 475 (where RANGE was)
+    rightTopControls.smoothSlider.setBounds(getScaledBounds(529, 48, 53, 53));  // Moved from 581 to 529
 
-    // Bottom row - Attack, Release, Autorel y Speed
+    // Bottom row - Attack, Release, Hold
     rightBottomKnobs.atkSlider.setBounds(getScaledBounds(500, 100, 53, 53));
     rightBottomKnobs.relSlider.setBounds(getScaledBounds(557, 100, 53, 53));  // Juntado con ATK
-    rightBottomKnobs.autorelButton.setBounds(getScaledBounds(623, 110, 30, 20));  // AR button - discrete size
+    rightBottomKnobs.holdSlider.setBounds(getScaledBounds(614, 100, 53, 53));  // Donde estaba AUTO REL
     
     // === SIDECHAIN CONTROLS (TOP CENTER) ===
     // HPF and LPF knobs swapped with their order buttons
@@ -567,7 +567,7 @@ void JCBCompressorAudioProcessorEditor::resized()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::timerCallback()
+void JCBExpanderAudioProcessorEditor::timerCallback()
 {
     // Sistema universal de decay para todos los DAWs
     applyMeterDecayIfNeeded();
@@ -620,7 +620,7 @@ void JCBCompressorAudioProcessorEditor::timerCallback()
     // Actualizar datos de waveform y obtener gain reduction para el medidor
     if (!isBypassed && !isProcessingInactive)
     {
-        // Optimización: Solo obtener buffers completos si el histograma está visible
+        // Obtener datos de waveform si las envolventes están visibles
         if (transferDisplay.isEnvelopeVisible())
         {
             std::vector<float> inputSamples, processedSamples, gainReductionSamples;
@@ -628,17 +628,18 @@ void JCBCompressorAudioProcessorEditor::timerCallback()
             
             if (!gainReductionSamples.empty())
             {
-                // Encontrar el valor máximo de gain reduction en el buffer
-                // Los valores vienen negativos de Gen~, así que buscamos el más negativo
-                float maxGR = 0.0f;
-                for (float gr : gainReductionSamples) {
-                    if (gr < maxGR) {
-                        maxGR = gr;
+                // Encontrar la mayor reducción de ganancia en el buffer para el medidor GR
+                // Los valores vienen en dB: negativos = reducción, positivos = amplificación
+                float maxReduction = 0.0f;  // Start with no reduction
+                for (float grDb : gainReductionSamples) {
+                    // For expander, find most negative value (greatest reduction)
+                    if (grDb < maxReduction) {
+                        maxReduction = grDb;
                     }
                 }
-                maxGainReductionFromBuffer = maxGR;
+                maxGainReductionFromBuffer = maxReduction;
                 
-                // Actualizar transfer display con datos de waveform
+                // Actualizar transfer display solo con datos de waveform (sin gain reduction)
                 if (!inputSamples.empty() && !processedSamples.empty())
                 {
                     // Actualizar estado EXT KEY y nivel de sidechain
@@ -649,7 +650,7 @@ void JCBCompressorAudioProcessorEditor::timerCallback()
                     float scLevel = (processor.getSCValue(0) + processor.getSCValue(1)) * 0.5f;
                     transferDisplay.setSidechainLevel(scLevel);
                     
-                    // Enviar solo la muestra más reciente (ya con detección de picos)
+                    // Enviar solo waveforms (el parámetro GR se ignora ahora)
                     transferDisplay.updateWaveformDataWithGR(&inputSamples[0], &processedSamples[0], &gainReductionSamples[0], 1);
                     
                     // Forzar repintado para mostrar envolvente actualizada
@@ -659,7 +660,7 @@ void JCBCompressorAudioProcessorEditor::timerCallback()
         }
         else
         {
-            // Optimización: Cuando el histograma no está visible, solo obtener el valor máximo
+            // Solo obtener el valor máximo de gain reduction para el medidor
             maxGainReductionFromBuffer = processor.getMaxGainReduction();
         }
     }
@@ -677,7 +678,7 @@ void JCBCompressorAudioProcessorEditor::timerCallback()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::buttonClicked(juce::Button* button)
+void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
 {
     // Simplificado - sin manejo automático de cambios de parámetros para undo/redo
     
@@ -902,7 +903,7 @@ void JCBCompressorAudioProcessorEditor::buttonClicked(juce::Button* button)
             topButtons.abCopyButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2196f3));  // Destello azul
             topButtons.abCopyButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             // Usar SafePointer para prevenir crashes si el editor se destruye antes de que se dispare el timer
-            juce::Component::SafePointer<JCBCompressorAudioProcessorEditor> safeThis(this);
+            juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeThis(this);
             juce::Timer::callAfterDelay(300, [safeThis]() {
                 if (safeThis) {
                     safeThis->topButtons.abCopyButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -915,7 +916,7 @@ void JCBCompressorAudioProcessorEditor::buttonClicked(juce::Button* button)
             topButtons.abCopyButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff9c27b0));  // Destello púrpura
             topButtons.abCopyButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             // Usar SafePointer para prevenir crashes si el editor se destruye antes de que se dispare el timer
-            juce::Component::SafePointer<JCBCompressorAudioProcessorEditor> safeThis(this);
+            juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeThis(this);
             juce::Timer::callAfterDelay(300, [safeThis]() {
                 if (safeThis) {
                     safeThis->topButtons.abCopyButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -1008,9 +1009,11 @@ void JCBCompressorAudioProcessorEditor::buttonClicked(juce::Button* button)
             
             // Activar modo DELTA en display
             transferDisplay.setDeltaMode(true);
+            transferDisplay.setVisible(false);  // Ocultar transfer function cuando DELTA ON
         } else {
             // Desactivar modo DELTA en display
             transferDisplay.setDeltaMode(false);
+            transferDisplay.setVisible(true);   // Mostrar transfer function cuando DELTA OFF
         }
         
         updateButtonStates();
@@ -1023,7 +1026,7 @@ void JCBCompressorAudioProcessorEditor::buttonClicked(juce::Button* button)
 //==============================================================================
 // GESTIÓN DE ESTADO DE PARÁMETROS
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::handleParameterChange()
+void JCBExpanderAudioProcessorEditor::handleParameterChange()
 {
     // No hacer nada si estamos cargando un preset
     if (isLoadingPreset) {
@@ -1063,24 +1066,11 @@ void JCBCompressorAudioProcessorEditor::handleParameterChange()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::updateARButtonText()
-{
-    // Actualizar texto del botón AR basado en el estado del toggle
-    bool isOn = rightBottomKnobs.autorelButton.getToggleState();
-    rightBottomKnobs.autorelButton.setButtonText(isOn ? "AR ON" : "AR OFF");
-}
-
-void JCBCompressorAudioProcessorEditor::updateRelSliderAlpha()
-{
-    // Actualizar alpha del slider REL basado en el estado del botón AR
-    bool arIsOn = rightBottomKnobs.autorelButton.getToggleState();
-    rightBottomKnobs.relSlider.setAlpha(arIsOn ? 0.3f : 1.0f);
-}
 
 //==============================================================================
 // MÉTODOS DE SETUP Y CONFIGURACIÓN
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::setupKnobs()
+void JCBExpanderAudioProcessorEditor::setupKnobs()
 {
     // Establecer undo manager y editor para todos los sliders primero
     
@@ -1148,7 +1138,7 @@ void JCBCompressorAudioProcessorEditor::setupKnobs()
     leftTopKnobs.kneeSlider.setPopupDisplayEnabled(false, false, this);
     leftTopKnobs.kneeSlider.setNumDecimalPlacesToDisplay(1);  // Solo 1 decimal
     addAndMakeVisible(leftTopKnobs.kneeSlider);
-    if (auto* param = processor.apvts.getParameter("h_KNEE"))
+    if (auto* param = processor.apvts.getParameter("q_KNEE"))
     {
         leftTopKnobs.kneeAttachment = std::make_unique<CustomSliderAttachment>(
             *param, leftTopKnobs.kneeSlider, &undoManager);
@@ -1229,34 +1219,6 @@ void JCBCompressorAudioProcessorEditor::setupKnobs()
     }
     leftBottomKnobs.clipSlider.setTooltip(JUCE_UTF8("CLIP: soft clipping para limitar picos.\n0 = sin clipping, 1 = máximo clipping.\nValor por defecto: 0 (off)"));
     
-    // AGAIN - nuevo knob
-    leftTopKnobs.againSlider.setName("again");  // Para mostrar AGAIN dentro del knob
-    leftTopKnobs.againSlider.setComponentID("again");
-    leftTopKnobs.againSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    leftTopKnobs.againSlider.setTextBoxStyle(juce::Slider::TextBoxAbove, false, 70, 16);
-    leftTopKnobs.againSlider.setLookAndFeel(&sliderLAFBig);
-    leftTopKnobs.againSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    leftTopKnobs.againSlider.setDoubleClickReturnValue(true, 0.0);
-    leftTopKnobs.againSlider.setPopupDisplayEnabled(false, false, this);
-    leftTopKnobs.againSlider.setTextBoxIsEditable(true);
-    leftTopKnobs.againSlider.setNumDecimalPlacesToDisplay(2);  // Mostrar 2 decimales
-    // Formato de texto personalizado para AGAIN: OFF a ~70%
-    leftTopKnobs.againSlider.textFromValueFunction = [](double value) {
-        if (value < 0.01)
-            return juce::String("OFF");
-        else if (value > 0.99)
-            return juce::String(JUCE_UTF8("~70%"));
-        else
-            return juce::String(static_cast<int>(value * 100)) + "%";
-    };
-    addAndMakeVisible(leftTopKnobs.againSlider);
-    if (auto* param = processor.apvts.getParameter("x_AUTOGAIN"))
-    {
-        leftTopKnobs.againAttachment = std::make_unique<CustomSliderAttachment>(
-            *param, leftTopKnobs.againSlider, &undoManager);
-        leftTopKnobs.againAttachment->onParameterChange = [this]() { handleParameterChange(); };
-    }
-    leftTopKnobs.againSlider.setTooltip(JUCE_UTF8("AGAIN: compensación automática de ganancia.\nTrabaja junto con MAKEUP para mantener niveles.\nValor por defecto: 0 (OFF)"));
     
     // === PERILLAS INFERIORES DERECHAS ===
     // ATK - copiado exactamente de ExpansorGate
@@ -1321,26 +1283,36 @@ void JCBCompressorAudioProcessorEditor::setupKnobs()
         rightBottomKnobs.relAttachment->onParameterChange = [this]() { handleParameterChange(); };
     }
 
-    // AR - botón con texto dinámico AR OFF/AR ON
-    rightBottomKnobs.autorelButton.setButtonText("AR OFF");
-    rightBottomKnobs.autorelButton.setClickingTogglesState(true);
-    rightBottomKnobs.autorelButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    rightBottomKnobs.autorelButton.setColour(juce::TextButton::buttonOnColourId, DarkTheme::deltaLow.withAlpha(0.7f)); // Acento turquesa/verde azulado cuando está ON
-    rightBottomKnobs.autorelButton.setColour(juce::TextButton::textColourOffId, DarkTheme::textSecondary.withAlpha(0.4f));
-    rightBottomKnobs.autorelButton.setColour(juce::TextButton::textColourOnId, DarkTheme::textPrimary);
-    rightBottomKnobs.autorelButton.setLookAndFeel(&smallButtonLAF); // Aplicar LookAndFeel para fuente pequeña
-    rightBottomKnobs.autorelButton.addListener(this);
-    addAndMakeVisible(rightBottomKnobs.autorelButton);
-    rightBottomKnobs.autorelAttachment = std::make_unique<UndoableButtonAttachment>(
-        *processor.apvts.getParameter("s_AUTORELEASE"), rightBottomKnobs.autorelButton, &undoManager);
-    rightBottomKnobs.autorelAttachment->onParameterChange = [this]() { 
-        handleParameterChange(); 
-        
-        // Actualizar transfer display inmediatamente - ESENCIAL para comportamiento DSP
-        
-        // Actualizar texto del botón dynamically
-        updateARButtonText();
+    // HOLD - nuevo knob (donde estaba AUTO REL)
+    rightBottomKnobs.holdSlider.setName("hold");  // Para mostrar HOLD dentro del knob
+    rightBottomKnobs.holdSlider.setComponentID("hold");
+    rightBottomKnobs.holdSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    rightBottomKnobs.holdSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 16);
+    rightBottomKnobs.holdSlider.setLookAndFeel(&sliderLAFBig);
+    rightBottomKnobs.holdSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    rightBottomKnobs.holdSlider.setRange(0.0, 500.0, 0.1);
+    rightBottomKnobs.holdSlider.setDoubleClickReturnValue(true, 0.0);
+    rightBottomKnobs.holdSlider.setPopupDisplayEnabled(false, false, this);
+    rightBottomKnobs.holdSlider.setTextBoxIsEditable(true);
+    rightBottomKnobs.holdSlider.setNumDecimalPlacesToDisplay(1);
+    // Formato de texto para HOLD en ms
+    rightBottomKnobs.holdSlider.textFromValueFunction = [](double value) {
+        if (value < 0.01)
+            return juce::String("OFF");
+        else if (value < 10.0)
+            return juce::String(value, 1) + " ms";  // 1 decimal para valores < 10
+        else
+            return juce::String(value, 0) + " ms";  // Sin decimales >= 10ms
     };
+    addAndMakeVisible(rightBottomKnobs.holdSlider);
+    if (auto* param = processor.apvts.getParameter("f_HOLD"))
+    {
+        rightBottomKnobs.holdAttachment = std::make_unique<CustomSliderAttachment>(
+            *param, rightBottomKnobs.holdSlider, &undoManager);
+        rightBottomKnobs.holdAttachment->onParameterChange = [this]() { handleParameterChange(); };
+    }
+
+    // AR - botón con texto dinámico AR OFF/AR ON (removido - ya no existe)
     
     // DELTA - botón con texto "DELTA" (estilo SC)
     parameterButtons.deltaButton.setButtonText("DELTA");
@@ -1355,33 +1327,29 @@ void JCBCompressorAudioProcessorEditor::setupKnobs()
     
     // Callback de DELTA movido al método buttonClicked()
     
-    // PARALL - nuevo knob con texto "PARALL" dentro
-    leftBottomKnobs.parallSlider.setName("parall");  // Para mostrar PARALL dentro del knob
-    leftBottomKnobs.parallSlider.setComponentID("parall");
-    leftBottomKnobs.parallSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    leftBottomKnobs.parallSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 16);
-    leftBottomKnobs.parallSlider.setLookAndFeel(&sliderLAFBig);
-    leftBottomKnobs.parallSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    leftBottomKnobs.parallSlider.setRange(0.0, 1.0, 0.01);  // Continuo de 0 a 1
-    leftBottomKnobs.parallSlider.setValue(0.0);
-    leftBottomKnobs.parallSlider.setDoubleClickReturnValue(true, 0.0);
-    leftBottomKnobs.parallSlider.setPopupDisplayEnabled(false, false, this);
-    leftBottomKnobs.parallSlider.setTextBoxIsEditable(true);  // Ahora editable
-    // Formato de texto personalizado para PARAL: COMP a COMP+DRY
-    leftBottomKnobs.parallSlider.textFromValueFunction = [](double value) {
-        if (value < 0.01)
-            return juce::String("COMP");
-        else if (value > 0.99)
-            return juce::String("COMP+DRY");
-        else
-            return juce::String(static_cast<int>(value * 100)) + "%";
+    
+    // RANGE - nuevo knob (donde estaba AGAIN)
+    rightTopControls.rangeSlider.setName("range");  // Para mostrar RANGE dentro del knob
+    rightTopControls.rangeSlider.setComponentID("range");
+    rightTopControls.rangeSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    rightTopControls.rangeSlider.setTextBoxStyle(juce::Slider::TextBoxAbove, false, 70, 16);
+    rightTopControls.rangeSlider.setLookAndFeel(&sliderLAFBig);
+    rightTopControls.rangeSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    rightTopControls.rangeSlider.setRange(-60.0, 0.0, 0.1);
+    rightTopControls.rangeSlider.setDoubleClickReturnValue(true, -20.0);
+    rightTopControls.rangeSlider.setPopupDisplayEnabled(false, false, this);
+    rightTopControls.rangeSlider.setTextBoxIsEditable(true);
+    rightTopControls.rangeSlider.setNumDecimalPlacesToDisplay(1);
+    // Formato de texto para RANGE en dB
+    rightTopControls.rangeSlider.textFromValueFunction = [](double value) {
+        return juce::String(value, 1) + " dB";
     };
-    addAndMakeVisible(leftBottomKnobs.parallSlider);
-    if (auto* param = processor.apvts.getParameter("w_PARALLEL"))
+    addAndMakeVisible(rightTopControls.rangeSlider);
+    if (auto* param = processor.apvts.getParameter("h_RANGE"))
     {
-        leftBottomKnobs.parallAttachment = std::make_unique<CustomSliderAttachment>(
-            *param, leftBottomKnobs.parallSlider, &undoManager);
-        leftBottomKnobs.parallAttachment->onParameterChange = [this]() { handleParameterChange(); };
+        rightTopControls.rangeAttachment = std::make_unique<CustomSliderAttachment>(
+            *param, rightTopControls.rangeSlider, &undoManager);
+        rightTopControls.rangeAttachment->onParameterChange = [this]() { handleParameterChange(); };
     }
     
     // SMOOTH - knob con mismo estilo que los demás
@@ -1416,35 +1384,6 @@ void JCBCompressorAudioProcessorEditor::setupKnobs()
     // El tooltip se establecerá en updateAllTooltips()
     
     // === CONTROLES SUPERIORES DERECHOS (SLIDERS) ===
-    // ALGO
-    rightTopControls.algoSlider.setComponentID("detect");
-    rightTopControls.algoSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    rightTopControls.algoSlider.setTextBoxStyle(juce::Slider::TextBoxAbove, false, 70, 16);
-    rightTopControls.algoSlider.setLookAndFeel(&sliderLAFBig);
-    rightTopControls.algoSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    rightTopControls.algoSlider.setRange(0.0, 2.0, 0.01);
-    rightTopControls.algoSlider.setDoubleClickReturnValue(true, 1.0);
-    rightTopControls.algoSlider.setPopupDisplayEnabled(false, false, this);
-    // Formato de texto personalizado para ALGO: SHARP a SLOW RMS con rangos precisos
-    rightTopControls.algoSlider.textFromValueFunction = [](double value) {
-        if (value <= 0.005)        // Exactamente 0.0
-            return juce::String("SHARP");
-        else if (value >= 1.995)   // Exactamente 2.0
-            return juce::String("SLOW RMS");
-        else if (value >= 0.995 && value <= 1.005)  // Exactamente 1.0
-            return juce::String("EXPO RMS");
-        else
-            return juce::String(value, 2);  // Mostrar 2 decimales para valores intermedios
-    };
-    addAndMakeVisible(rightTopControls.algoSlider);
-    if (auto* param = processor.apvts.getParameter("f_ALGO"))
-    {
-        rightTopControls.algoAttachment = std::make_unique<CustomSliderAttachment>(
-            *param, rightTopControls.algoSlider, &undoManager);
-        rightTopControls.algoAttachment->onParameterChange = [this]() { handleParameterChange(); };
-    }
-    // El tooltip se establecerá en updateAllTooltips()
-    
     // REACT
     rightTopControls.reactSlider.setComponentID("react");
     rightTopControls.reactSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -1486,11 +1425,15 @@ void JCBCompressorAudioProcessorEditor::setupKnobs()
         transferDisplay.setKnee(static_cast<float>(leftTopKnobs.kneeSlider.getValue()));
         updateTransferDisplay();
     };
+    rightTopControls.rangeSlider.onValueChange = [this]() {
+        transferDisplay.setRange(static_cast<float>(rightTopControls.rangeSlider.getValue()));
+        updateTransferDisplay();
+    };
     
     
 }
 
-void JCBCompressorAudioProcessorEditor::setupMeters()
+void JCBExpanderAudioProcessorEditor::setupMeters()
 {
     // Medidores de entrada
     addAndMakeVisible(inputMeterL);
@@ -1559,7 +1502,7 @@ void JCBCompressorAudioProcessorEditor::setupMeters()
     
 }
 
-void JCBCompressorAudioProcessorEditor::setupSidechainControls()
+void JCBExpanderAudioProcessorEditor::setupSidechainControls()
 {
     // Establecer undo manager y editor para sliders de sidechain
     
@@ -1679,37 +1622,41 @@ void JCBCompressorAudioProcessorEditor::setupSidechainControls()
     sidechainControls.soloScButton.setTooltip(JUCE_UTF8("SOLO SC: escucha solo la señal del sidechain.\nPermite monitorear qué está controlando el compresor.\nSe procesa en dual mono"));
     
     // Botón de orden HPF - control de orden del filtro
-    sidechainControls.hpfOrderButton.setClickingTogglesState(true);
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    sidechainControls.hpfOrderButton.setEnabled(false);  // Inicialmente deshabilitado
-    sidechainControls.hpfOrderButton.setAlpha(0.0f);  // Inicialmente invisible
-    sidechainControls.hpfOrderButton.addListener(this);
+    sidechainControls.hpfOrderButton.setEnabled(true);   // Enable BEFORE creating attachment
+    sidechainControls.hpfOrderButton.setAlpha(1.0f);     // Make visible BEFORE creating attachment
     addAndMakeVisible(sidechainControls.hpfOrderButton);
-    sidechainControls.hpfOrderAttachment = std::make_unique<UndoableButtonAttachment>(
-        *processor.apvts.getParameter("j_HPFORDER"), sidechainControls.hpfOrderButton, &undoManager);
-    sidechainControls.hpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
-    sidechainControls.hpfOrderButton.setTooltip(JUCE_UTF8("HPF ORDER: orden del filtro paso alto.\n12 dB/oct (2º orden) o 24 dB/oct (4º orden).\nValor por defecto: 12 dB/oct"));
+    // Crear UndoableMultiStateButtonAttachment para HPF order
+    if (auto* param = processor.apvts.getParameter("j_HPFORDER"))
+    {
+        sidechainControls.hpfOrderAttachment = std::make_unique<UndoableMultiStateButtonAttachment>(
+            *param, sidechainControls.hpfOrderButton, &undoManager);
+        sidechainControls.hpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
+    }
+    sidechainControls.hpfOrderButton.setTooltip(JUCE_UTF8("HPF ORDER: orden del filtro paso alto.\n12 dB/oct, 24 dB/oct o 48 dB/oct.\nClick para ciclar entre opciones.\nValor por defecto: 12 dB/oct"));
     
     // Botón de orden LPF - control de orden del filtro
-    sidechainControls.lpfOrderButton.setClickingTogglesState(true);
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    sidechainControls.lpfOrderButton.setEnabled(false);  // Inicialmente deshabilitado
-    sidechainControls.lpfOrderButton.setAlpha(0.0f);  // Inicialmente invisible
-    sidechainControls.lpfOrderButton.addListener(this);
+    sidechainControls.lpfOrderButton.setEnabled(true);  // Enable BEFORE creating attachment
+    sidechainControls.lpfOrderButton.setAlpha(1.0f);  // Make visible BEFORE creating attachment
     addAndMakeVisible(sidechainControls.lpfOrderButton);
-    sidechainControls.lpfOrderAttachment = std::make_unique<UndoableButtonAttachment>(
-        *processor.apvts.getParameter("k_LPFORDER"), sidechainControls.lpfOrderButton, &undoManager);
-    sidechainControls.lpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
-    sidechainControls.lpfOrderButton.setTooltip(JUCE_UTF8("LPF ORDER: orden del filtro paso bajo.\n12 dB/oct (2º orden) o 24 dB/oct (4º orden).\nValor por defecto: 12 dB/oct"));
+    // Crear UndoableMultiStateButtonAttachment para LPF order
+    if (auto* param = processor.apvts.getParameter("k_LPFORDER"))
+    {
+        sidechainControls.lpfOrderAttachment = std::make_unique<UndoableMultiStateButtonAttachment>(
+            *param, sidechainControls.lpfOrderButton, &undoManager);
+        sidechainControls.lpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
+    }
+    sidechainControls.lpfOrderButton.setTooltip(JUCE_UTF8("LPF ORDER: orden del filtro paso bajo.\n12 dB/oct, 24 dB/oct o 48 dB/oct.\nClick para ciclar entre opciones.\nValor por defecto: 12 dB/oct"));
 }
 
-void JCBCompressorAudioProcessorEditor::setupPresetArea()
+void JCBExpanderAudioProcessorEditor::setupPresetArea()
 {
     // Botón Save - estilo transparente
     presetArea.saveButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -1820,17 +1767,22 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
                 float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
                 rightBottomKnobs.relSlider.setValue(realValue, juce::sendNotificationSync);
             }
-            if (auto* param = processor.apvts.getParameter("f_ALGO")) {
+            if (auto* param = processor.apvts.getParameter("f_HOLD")) {
                 float defaultValue = param->getDefaultValue();
                 float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
-                rightTopControls.algoSlider.setValue(realValue, juce::sendNotificationSync);
+                rightBottomKnobs.holdSlider.setValue(realValue, juce::sendNotificationSync);
             }
             if (auto* param = processor.apvts.getParameter("g_REACT")) {
                 float defaultValue = param->getDefaultValue();
                 float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
                 rightTopControls.reactSlider.setValue(realValue, juce::sendNotificationSync);
             }
-            if (auto* param = processor.apvts.getParameter("h_KNEE")) {
+            if (auto* param = processor.apvts.getParameter("h_RANGE")) {
+                float defaultValue = param->getDefaultValue();
+                float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
+                rightTopControls.rangeSlider.setValue(realValue, juce::sendNotificationSync);
+            }
+            if (auto* param = processor.apvts.getParameter("q_KNEE")) {
                 float defaultValue = param->getDefaultValue();
                 float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
                 leftTopKnobs.kneeSlider.setValue(realValue, juce::sendNotificationSync);
@@ -1880,10 +1832,6 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
                 bool toggleState = defaultValue >= 0.5f;
                 sidechainControls.keyButton.setToggleState(toggleState, juce::sendNotificationSync);
             }
-            if (dynamic_cast<juce::AudioParameterBool*>(processor.apvts.getParameter("s_AUTORELEASE"))) {
-                bool defaultValue = false;  // Valor por defecto para s_AUTORELEASE
-                rightBottomKnobs.autorelButton.setToggleState(defaultValue, juce::sendNotificationSync);
-            }
             if (auto* param = processor.apvts.getParameter("u_SOFTCLIP")) {
                 float defaultValue = param->getDefaultValue();
                 float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
@@ -1893,16 +1841,6 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
                 float defaultValue = param->getDefaultValue();
                 bool toggleState = defaultValue >= 0.5f;
                 parameterButtons.deltaButton.setToggleState(toggleState, juce::sendNotificationSync);
-            }
-            if (auto* param = processor.apvts.getParameter("w_PARALLEL")) {
-                float defaultValue = param->getDefaultValue();
-                float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
-                leftBottomKnobs.parallSlider.setValue(realValue, juce::sendNotificationSync);
-            }
-            if (auto* param = processor.apvts.getParameter("x_AUTOGAIN")) {
-                float defaultValue = param->getDefaultValue();
-                float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
-                leftTopKnobs.againSlider.setValue(realValue, juce::sendNotificationSync);
             }
             if (auto* param = processor.apvts.getParameter("y_SCTRIM")) {
                 float defaultValue = param->getDefaultValue();
@@ -1914,24 +1852,15 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
                 float realValue = param->getNormalisableRange().convertFrom0to1(defaultValue);
                 rightTopControls.smoothSlider.setValue(realValue, juce::sendNotificationSync);
             }
-            if (auto* param = processor.apvts.getParameter("j_HPFORDER")) {
-                float defaultValue = param->getDefaultValue();
-                bool toggleState = defaultValue >= 0.5f;
-                sidechainControls.hpfOrderButton.setToggleState(toggleState, juce::sendNotificationSync);
-            }
-            if (auto* param = processor.apvts.getParameter("k_LPFORDER")) {
-                float defaultValue = param->getDefaultValue();
-                bool toggleState = defaultValue >= 0.5f;
-                sidechainControls.lpfOrderButton.setToggleState(toggleState, juce::sendNotificationSync);
-            }
+            // Los botones de orden de filtro se actualizan automáticamente a través de sus attachments
             
             // Reactivar undo después carga de preset
             isLoadingPreset = false;
             
             // IMPORTANTE: Forzar la sincronización directa de Gen~ para asegurar valores correctos de los parámetros
             // Esto replica la misma sincronización realizada durante la instanciación del plugin
-            for (int i = 0; i < JCBCompressor::num_params(); i++) {
-                auto paramName = juce::String(JCBCompressor::getparametername(processor.getPluginState(), i));
+            for (int i = 0; i < JCBExpander::num_params(); i++) {
+                auto paramName = juce::String(JCBExpander::getparametername(processor.getPluginState(), i));
                 if (auto* param = processor.apvts.getRawParameterValue(paramName)) {
                     float value = param->load();
                     
@@ -1943,7 +1872,7 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
                         value = 0.1f;
                     }
                     
-                    JCBCompressor::setparameter(processor.getPluginState(), i, value, nullptr);
+                    JCBExpander::setparameter(processor.getPluginState(), i, value, nullptr);
                 }
             }
         } 
@@ -2017,7 +1946,7 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
         if (auto* ratioParam = processor.apvts.getRawParameterValue("c_RATIO")) {
             transferDisplay.setRatio(ratioParam->load());
         }
-        if (auto* kneeParam = processor.apvts.getRawParameterValue("h_KNEE")) {
+        if (auto* kneeParam = processor.apvts.getRawParameterValue("q_KNEE")) {
             transferDisplay.setKnee(kneeParam->load());
         }
         updateTransferDisplay();
@@ -2047,7 +1976,7 @@ void JCBCompressorAudioProcessorEditor::setupPresetArea()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::setupUtilityButtons()
+void JCBExpanderAudioProcessorEditor::setupUtilityButtons()
 {
     // Undo - estilo transparente
     utilityButtons.undoButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -2210,7 +2139,7 @@ void JCBCompressorAudioProcessorEditor::setupUtilityButtons()
 
 }
 
-void JCBCompressorAudioProcessorEditor::setupParameterButtons()
+void JCBExpanderAudioProcessorEditor::setupParameterButtons()
 {
     // Botón DELTA - movido desde rightBottomKnobs
     parameterButtons.deltaButton.setClickingTogglesState(true);
@@ -2241,7 +2170,7 @@ void JCBCompressorAudioProcessorEditor::setupParameterButtons()
     parameterButtons.bypassButton.setTooltip(JUCE_UTF8("BYPASS: desactiva el procesamiento del plugin.\nEs independiente del bypass del DAW y está suavizado.\nValor por defecto: OFF"));
 }
 
-void JCBCompressorAudioProcessorEditor::setupBackground()
+void JCBExpanderAudioProcessorEditor::setupBackground()
 {
     // Cargar imágenes de fondo
     normalBackground = juce::ImageCache::getFromMemory(BinaryData::fondo_png, BinaryData::fondo_pngSize);
@@ -2279,7 +2208,7 @@ void JCBCompressorAudioProcessorEditor::setupBackground()
 // MÉTODOS DE UPDATE Y REFRESH
 //==============================================================================
 
-void JCBCompressorAudioProcessorEditor::updateButtonStates()
+void JCBExpanderAudioProcessorEditor::updateButtonStates()
 {
     // Función maestra que actualiza todos los estados de UI
     updateBasicButtonStates();
@@ -2288,7 +2217,7 @@ void JCBCompressorAudioProcessorEditor::updateButtonStates()
     updateMeterStates();
 }
 
-void JCBCompressorAudioProcessorEditor::updateBasicButtonStates()
+void JCBExpanderAudioProcessorEditor::updateBasicButtonStates()
 {
     // Obtener estados actuales
     const bool bypassActive = parameterButtons.bypassButton.getToggleState();
@@ -2298,7 +2227,7 @@ void JCBCompressorAudioProcessorEditor::updateBasicButtonStates()
     bypassTextVisible = bypassActive;  // Siempre mostrar texto cuando bypass está activo
 }
 
-void JCBCompressorAudioProcessorEditor::updateSidechainComponentStates()
+void JCBExpanderAudioProcessorEditor::updateSidechainComponentStates()
 {
     // Los filtros HPF/LPF siempre visibles y activos
     sidechainControls.hpfSlider.setVisible(true);
@@ -2336,7 +2265,7 @@ void JCBCompressorAudioProcessorEditor::updateSidechainComponentStates()
     scTrimSlider.setAlpha(extKeyActive ? 1.0f : 0.25f);
 }
 
-void JCBCompressorAudioProcessorEditor::updateBackgroundState()
+void JCBExpanderAudioProcessorEditor::updateBackgroundState()
 {
     // Obtener estados actuales
     const bool bypassActive = parameterButtons.bypassButton.getToggleState();
@@ -2354,7 +2283,40 @@ void JCBCompressorAudioProcessorEditor::updateBackgroundState()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::updateMeterStates()
+void JCBExpanderAudioProcessorEditor::updateFilterButtonText()
+{
+    // Actualizar texto del botón HPF Order
+    if (auto* hpfParam = processor.apvts.getParameter("j_HPFORDER"))
+    {
+        float normalized = hpfParam->getValue();
+        float denormalized = hpfParam->convertFrom0to1(normalized);
+        int value = static_cast<int>(denormalized + 0.5f);
+        
+        switch (value)
+        {
+            case 0: sidechainControls.hpfOrderButton.setButtonText("12"); break;
+            case 1: sidechainControls.hpfOrderButton.setButtonText("24"); break;
+            default: sidechainControls.hpfOrderButton.setButtonText("12"); break;
+        }
+    }
+    
+    // Actualizar texto del botón LPF Order
+    if (auto* lpfParam = processor.apvts.getParameter("k_LPFORDER"))
+    {
+        float normalized = lpfParam->getValue();
+        float denormalized = lpfParam->convertFrom0to1(normalized);
+        int value = static_cast<int>(denormalized + 0.5f);
+        
+        switch (value)
+        {
+            case 0: sidechainControls.lpfOrderButton.setButtonText("12"); break;
+            case 1: sidechainControls.lpfOrderButton.setButtonText("24"); break;
+            default: sidechainControls.lpfOrderButton.setButtonText("12"); break;
+        }
+    }
+}
+
+void JCBExpanderAudioProcessorEditor::updateMeterStates()
 {
     // Obtener estados actuales
     const bool bypassActive = parameterButtons.bypassButton.getToggleState();
@@ -2385,15 +2347,16 @@ void JCBCompressorAudioProcessorEditor::updateMeterStates()
     
     // Ocultar gain reduction meter cuando SOLO SC está activo (no hay compresión activa)
     // También considerar si graphics está activo para mantener consistencia
+    // NUEVO: También ocultar cuando BYPASS está activo
     bool graphicsActive = utilityButtons.runGraphicsButton.getToggleState();
-    grMeter.setVisible(!soloScActive && !graphicsActive);
+    grMeter.setVisible(!soloScActive && !graphicsActive && !bypassActive);
     
     // Actualizar gradiente de salida para modo bypass
     outputMeterL.setBypassMode(bypassActive);
     outputMeterR.setBypassMode(bypassActive);
 }
 
-void JCBCompressorAudioProcessorEditor::updateTransferDisplay()
+void JCBExpanderAudioProcessorEditor::updateTransferDisplay()
 {
     // Actualizar los valores de los parámetros desde los sliders
     float thresholdDB = leftTopKnobs.thdSlider.getValue();
@@ -2409,7 +2372,7 @@ void JCBCompressorAudioProcessorEditor::updateTransferDisplay()
     transferDisplay.updateCurve();
 }
 
-void JCBCompressorAudioProcessorEditor::updateMeters()
+void JCBExpanderAudioProcessorEditor::updateMeters()
 {
     // CORRECCIÓN CRÍTICA: Cachear estados de visibilidad para evitar llamadas repetidas a setVisible
     static bool lastSoloScActive = false;
@@ -2480,7 +2443,7 @@ void JCBCompressorAudioProcessorEditor::updateMeters()
 }
 
 
-void JCBCompressorAudioProcessorEditor::updateSliderValues()
+void JCBExpanderAudioProcessorEditor::updateSliderValues()
 {
     // Actualizar todos los sliders con los valores actuales del APVTS
     // Esto soluciona el problema de que los valores no se actualizan al cargar sesión
@@ -2493,7 +2456,7 @@ void JCBCompressorAudioProcessorEditor::updateSliderValues()
     if (auto* param = processor.apvts.getRawParameterValue("c_RATIO"))
         leftTopKnobs.ratioSlider.setValue(param->load(), juce::dontSendNotification);
         
-    if (auto* param = processor.apvts.getRawParameterValue("h_KNEE"))
+    if (auto* param = processor.apvts.getRawParameterValue("q_KNEE"))
         leftTopKnobs.kneeSlider.setValue(param->load(), juce::dontSendNotification);
     
     // Left bottom knobs
@@ -2506,12 +2469,8 @@ void JCBCompressorAudioProcessorEditor::updateSliderValues()
     if (auto* param = processor.apvts.getRawParameterValue("u_SOFTCLIP"))
         leftBottomKnobs.clipSlider.setValue(param->load(), juce::dontSendNotification);
         
-    if (auto* param = processor.apvts.getRawParameterValue("x_AUTOGAIN"))
-        leftTopKnobs.againSlider.setValue(param->load(), juce::dontSendNotification);
     
     // Right top controls
-    if (auto* param = processor.apvts.getRawParameterValue("f_ALGO"))
-        rightTopControls.algoSlider.setValue(param->load(), juce::dontSendNotification);
         
     if (auto* param = processor.apvts.getRawParameterValue("g_REACT"))
         rightTopControls.reactSlider.setValue(param->load(), juce::dontSendNotification);
@@ -2523,8 +2482,6 @@ void JCBCompressorAudioProcessorEditor::updateSliderValues()
     if (auto* param = processor.apvts.getRawParameterValue("e_REL"))
         rightBottomKnobs.relSlider.setValue(param->load(), juce::dontSendNotification);
         
-    if (auto* param = processor.apvts.getRawParameterValue("w_PARALLEL"))
-        leftBottomKnobs.parallSlider.setValue(param->load(), juce::dontSendNotification);
         
     if (auto* param = processor.apvts.getRawParameterValue("z_SMOOTH"))
         rightTopControls.smoothSlider.setValue(param->load(), juce::dontSendNotification);
@@ -2556,7 +2513,7 @@ void JCBCompressorAudioProcessorEditor::updateSliderValues()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::resetGuiSize()
+void JCBExpanderAudioProcessorEditor::resetGuiSize()
 {
     // Ciclar al siguiente estado: Current -> Maximum -> Minimum -> Current
     switch (currentSizeState) {
@@ -2592,7 +2549,7 @@ void JCBCompressorAudioProcessorEditor::resetGuiSize()
 //==============================================================================
 // GESTIÓN DE PRESETS
 //==============================================================================
-juce::File JCBCompressorAudioProcessorEditor::getPresetsFolder()
+juce::File JCBExpanderAudioProcessorEditor::getPresetsFolder()
 {
     juce::File folder = juce::File::getSpecialLocation(juce::File::SpecialLocationType::userApplicationDataDirectory)
         .getChildFile("Audio")
@@ -2607,12 +2564,12 @@ juce::File JCBCompressorAudioProcessorEditor::getPresetsFolder()
     return folder;
 }
 
-juce::Array<juce::File> JCBCompressorAudioProcessorEditor::populatePresetFolder()
+juce::Array<juce::File> JCBExpanderAudioProcessorEditor::populatePresetFolder()
 {
     return getPresetsFolder().findChildFiles(2, false, "*.preset");
 }
 
-void JCBCompressorAudioProcessorEditor::refreshPresetMenu()
+void JCBExpanderAudioProcessorEditor::refreshPresetMenu()
 {
     presetArea.presetMenu.clear();
     juce::StringArray presetNames;
@@ -2668,7 +2625,7 @@ void JCBCompressorAudioProcessorEditor::refreshPresetMenu()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::savePresetFile()
+void JCBExpanderAudioProcessorEditor::savePresetFile()
 {
     // Obtener estado del menú de presets y del processor
     juce::String currentText = presetArea.presetMenu.getText();
@@ -2758,7 +2715,7 @@ void JCBCompressorAudioProcessorEditor::savePresetFile()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::saveAsPresetFile()
+void JCBExpanderAudioProcessorEditor::saveAsPresetFile()
 {
     // Crear y mostrar el diálogo personalizado
     savePresetDialog = std::make_unique<SavePresetDialog>("");
@@ -2847,7 +2804,7 @@ void JCBCompressorAudioProcessorEditor::saveAsPresetFile()
     savePresetDialog->showDialog();
 }
 
-void JCBCompressorAudioProcessorEditor::deletePresetFile()
+void JCBExpanderAudioProcessorEditor::deletePresetFile()
 {
     int selectedId = presetArea.presetMenu.getSelectedId();
     juce::String presetName;
@@ -2908,7 +2865,7 @@ void JCBCompressorAudioProcessorEditor::deletePresetFile()
     });
 }
 
-void JCBCompressorAudioProcessorEditor::selectNextPreset()
+void JCBExpanderAudioProcessorEditor::selectNextPreset()
 {
     int currentId = presetArea.presetMenu.getSelectedId();
     int numItems = presetArea.presetMenu.getNumItems();
@@ -2936,7 +2893,7 @@ void JCBCompressorAudioProcessorEditor::selectNextPreset()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::selectPreviousPreset()
+void JCBExpanderAudioProcessorEditor::selectPreviousPreset()
 {
     int currentId = presetArea.presetMenu.getSelectedId();
     int numItems = presetArea.presetMenu.getNumItems();
@@ -2969,7 +2926,7 @@ void JCBCompressorAudioProcessorEditor::selectPreviousPreset()
 //==============================================================================
 // DIÁLOGOS Y OVERLAYS
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::showCustomConfirmDialog(const juce::String& message, 
+void JCBExpanderAudioProcessorEditor::showCustomConfirmDialog(const juce::String& message, 
                                                           const juce::String& subMessage,
                                                           std::function<void(bool)> callback,
                                                           const juce::String& confirmText,
@@ -2988,7 +2945,7 @@ void JCBCompressorAudioProcessorEditor::showCustomConfirmDialog(const juce::Stri
     deleteConfirmDialog->showDialog();
 }
 
-void JCBCompressorAudioProcessorEditor::showCustomAlertDialog(const juce::String& title, const juce::String& message)
+void JCBExpanderAudioProcessorEditor::showCustomAlertDialog(const juce::String& title, const juce::String& message)
 {
     // Crear un diálogo de alerta simple con solo OK
     alertDialog = std::make_unique<CustomAlertDialog>(title, message);
@@ -2997,7 +2954,7 @@ void JCBCompressorAudioProcessorEditor::showCustomAlertDialog(const juce::String
     alertDialog->showDialog();
 }
 
-void JCBCompressorAudioProcessorEditor::showCredits()
+void JCBExpanderAudioProcessorEditor::showCredits()
 {
     if (creditsOverlay == nullptr)
     {
@@ -3015,7 +2972,7 @@ void JCBCompressorAudioProcessorEditor::showCredits()
     }
 }
 
-void JCBCompressorAudioProcessorEditor::hideCredits()
+void JCBExpanderAudioProcessorEditor::hideCredits()
 {
     if (creditsOverlay != nullptr)
     {
@@ -3027,7 +2984,7 @@ void JCBCompressorAudioProcessorEditor::hideCredits()
 //==============================================================================
 // SISTEMA DE TOOLTIPS
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::updateTodoButtonTexts()
+void JCBExpanderAudioProcessorEditor::updateTodoButtonTexts()
 {
     // Update TODO button tooltips based on current language
     bool isSpanish = (currentLanguage == TooltipLanguage::Spanish);
@@ -3054,7 +3011,7 @@ void JCBCompressorAudioProcessorEditor::updateTodoButtonTexts()
     // Zoom y Diagram mantienen sus tooltips actuales ya que son funcionales
 }
 
-void JCBCompressorAudioProcessorEditor::updateAllTooltips()
+void JCBExpanderAudioProcessorEditor::updateAllTooltips()
 {
     // Actualizar todos los tooltips de componentes basado en el idioma actual
     
@@ -3070,20 +3027,18 @@ void JCBCompressorAudioProcessorEditor::updateAllTooltips()
     leftBottomKnobs.drywetSlider.setTooltip(getTooltipText("drywet"));
     leftBottomKnobs.lookaheadSlider.setTooltip(getTooltipText("lookahead"));
     leftBottomKnobs.clipSlider.setTooltip(getTooltipText("clip"));
-    leftTopKnobs.againSlider.setTooltip(getTooltipText("again"));
     
     // Perillas - superiores derechas
-    rightTopControls.algoSlider.setTooltip(getTooltipText("algo"));
+    rightTopControls.rangeSlider.setTooltip(getTooltipText("range"));
     rightTopControls.reactSlider.setTooltip(getTooltipText("react"));
+    rightTopControls.smoothSlider.setTooltip(getTooltipText("smooth"));
     
     // Perillas - inferiores derechas
     rightBottomKnobs.atkSlider.setTooltip(getTooltipText("attack"));
     rightBottomKnobs.relSlider.setTooltip(getTooltipText("release"));
-    rightBottomKnobs.autorelButton.setTooltip(getTooltipText("autorel"));
+    rightBottomKnobs.holdSlider.setTooltip(getTooltipText("hold"));
     // speedButton removed
     parameterButtons.deltaButton.setTooltip(getTooltipText("delta"));
-    leftBottomKnobs.parallSlider.setTooltip(getTooltipText("parallel"));
-    rightTopControls.smoothSlider.setTooltip(getTooltipText("smooth"));
     
     // Sliders de trim y makeup
     trimSlider.setTooltip(getTooltipText("trim"));
@@ -3131,27 +3086,24 @@ void JCBCompressorAudioProcessorEditor::updateAllTooltips()
     // CODE button removed
 }
 
-juce::String JCBCompressorAudioProcessorEditor::getTooltipText(const juce::String& key)
+juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String& key)
 {
     if (currentLanguage == TooltipLanguage::Spanish)
     {
         // Spanish tooltips
-        if (key == "title") return JUCE_UTF8("JCBCompressor: compresor de audio v0.9.992 beta\nPlugin educativo open source\nClick para créditos");
+        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.992 beta\nPlugin educativo open source\nClick para créditos");
         if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la compresión\nSeñales sobre este nivel se comprimen\nRango: -60 a 0 dB | Por defecto: -18 dB");
         if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de compresión aplicada\nRelación entrada/salida sobre el threshold\nRango: 1:1 a 20:1 | Por defecto: 4:1");
         if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 0 a 30 dB | Por defecto: 0 dB");
         if (key == "drywet") return JUCE_UTF8("DRY/WET: mezcla final entre señal original y procesada\nControl de balance entrada/salida\nRango: 0 a 100% | Por defecto: 100%");
         if (key == "lookahead") return JUCE_UTF8("LOOK AHEAD: retardo para evitar overshooting\nReporta latencia al host\nRango: 0 a 10 ms | Por defecto: 0 ms");
         if (key == "clip") return JUCE_UTF8("SOFT CLIP: limitador suave de salida\nPreviene saturación con distorsión armónica\nRango: 0/OFF a 1 | Por defecto: 0/OFF");
-        if (key == "again") return JUCE_UTF8("AUTO GAIN: compensación parcial de ganancia\nRecupera ~70% del nivel, funciona junto con makeup\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "algo") return JUCE_UTF8("ALGORITHM: tipo de detector interpolado\nSliding: rápido y preciso | EXPO RMS: clásico | Slow RMS: suave\nRango continuo entre 0-2 | Por defecto: 1 (EXPO RMS)");
         if (key == "react") return JUCE_UTF8("REACT: respuesta del detector a transientes.\nValores bajos: suave | Valores altos: agresivo.\nRango: 0 a 100% | Por defecto: 0%");
         if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima compresión\nVelocidad de respuesta del compresor\nRango: 0.1 a 100 ms | Por defecto: 5 ms");
         if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin compresión\nPermite valores extremos que distorsionan\nRango: 0.1 a 1000 ms | Por defecto: 30 ms");
-        if (key == "autorel") return JUCE_UTF8("AUTO RELEASE: ajuste dinámico del release\nAdapta el tiempo según material de audio entrante\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "speed") return JUCE_UTF8("AR: activar auto release speed\nOFF = desactivado, ON = activado\nRango: OFF/ON | Por defecto: OFF");
+        if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
+        if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel mínimo de reducción de ganancia\nRango: -60 a 0 dB | Por defecto: -20 dB");
         if (key == "delta") return JUCE_UTF8("DELTA: escucha la reducción aplicada\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "parallel") return JUCE_UTF8("PARALLEL: suma señal sin comprimir\nCompresión paralela real sin pérdida de nivel\nRango: -inf a 0 dB | Por defecto: -inf dB");
         if (key == "trim") return JUCE_UTF8("TRIM INPUT: ganancia de entrada al compresor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de compensación manual\nFunciona junto al Auto Gain\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "sc") return JUCE_UTF8("SC: activa los filtros del sidechain interno.\nPermite filtrar la señal, tanto interna como externa, que controla el compresor.\nValor por defecto: OFF");
@@ -3181,21 +3133,19 @@ juce::String JCBCompressorAudioProcessorEditor::getTooltipText(const juce::Strin
     else
     {
         // English tooltips
-        if (key == "title") return "JCBCompressor: audio compressor v0.9.992 beta\nOpen source educational plugin\nClick for credits";
+        if (key == "title") return "JCBExpander: audio expander v0.9.992 beta\nOpen source educational plugin\nClick for credits";
         if (key == "thd") return "THRESHOLD: level where compression begins\nSignals above this level are compressed\nRange: -60 to 0 dB | Default: -18 dB";
         if (key == "ratio") return "RATIO: amount of compression applied\nInput/output relationship above threshold\nRange: 1:1 to 20:1 | Default: 4:1";
         if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 0 to 30 dB | Default: 0 dB";
         if (key == "drywet") return "DRY/WET: final mix between original and processed signal\nInput/output balance control\nRange: 0 to 100% | Default: 100%";
         if (key == "lookahead") return "LOOK AHEAD: delay to prevent overshooting\nReports latency to host\nRange: 0 to 10 ms | Default: 0 ms";
         if (key == "clip") return "SOFT CLIP: soft output limiter\nPrevents clipping with harmonic distortion\nRange: 0/OFF to 1 | Default: 0/OFF";
-        if (key == "again") return "AUTO GAIN: partial gain compensation\nRecovers ~70% of level, works together with makeup\nRange: OFF/ON | Default: OFF";
         if (key == "react") return "REACT: detector response to transients.\nLow values: smooth | High values: aggressive.\nRange: 0 to 100% | Default: 0%";
         if (key == "attack") return "ATTACK: time to reach maximum compression\nCompressor response speed\nRange: 0.1 to 100 ms | Default: 5 ms";
         if (key == "release") return "RELEASE: time to return uncompressed\nAllows extreme values for creative distortion\nRange: 0.1 to 1000 ms | Default: 30 ms";
-        if (key == "autorel") return "AUTO RELEASE: dynamic release adjustment\nAdapts timing based on incoming audio material\nRange: OFF/ON | Default: OFF";
-        if (key == "speed") return "AR: activate auto release speed\nOFF = disabled, ON = enabled\nRange: OFF/ON | Default: OFF";
+        if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
+        if (key == "range") return "RANGE: lower limit of expansion\nMinimum level of gain reduction\nRange: -60 to 0 dB | Default: -20 dB";
         if (key == "delta") return "DELTA: listen to applied reduction\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
-        if (key == "parallel") return "PARALLEL: adds uncompressed signal\nTrue parallel compression without level loss\nRange: -inf to 0 dB | Default: -inf dB";
         if (key == "trim") return "TRIM INPUT: compressor input gain\nAdjusts level before processing\nRange: -12 to +12 dB | Default: 0 dB";
         if (key == "makeup") return "MAKEUP: manual compensation gain\nWorks together with Auto Gain\nRange: -12 to +12 dB | Default: 0 dB";
         if (key == "sc") return "SC: activates internal sidechain filters.\nAllows filtering the signal, both internal and external, that controls the compressor.\nDefault: OFF";
@@ -3221,7 +3171,7 @@ juce::String JCBCompressorAudioProcessorEditor::getTooltipText(const juce::Strin
         if (key == "sctrim") return "SC TRIM: sidechain input gain -12 to +12 dB\nAdjusts external sidechain level\nDefault: 0 dB, activated with EXT KEY";
         if (key == "link") return "STEREO LINKED: always active.\nPlugin only works in stereo linked mode.\nBoth channels are always linked";
         if (key == "smooth") return "SMOOTH: extra envelope detector smoothing\nControls smoothing amount applied to detection\nRange: 0 (RAW) to 1 (SMOOTH) | Default: 0";
-        if (key == "algo") return "ALGORITHM: interpolated detector type\nSliding: fast and precise | EXPO RMS: classic | Slow RMS: smooth\nContinuous range 0–2 | Default: 1 (EXPO RMS)";    }
+    }
     
     return "";
 }
@@ -3229,7 +3179,7 @@ juce::String JCBCompressorAudioProcessorEditor::getTooltipText(const juce::Strin
 //==============================================================================
 // HELPERS DE UI
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::applyAlphaToMainControls(float alpha)
+void JCBExpanderAudioProcessorEditor::applyAlphaToMainControls(float alpha)
 {
     // Main knobs
     leftTopKnobs.thdSlider.setAlpha(alpha);
@@ -3239,17 +3189,15 @@ void JCBCompressorAudioProcessorEditor::applyAlphaToMainControls(float alpha)
     leftBottomKnobs.drywetSlider.setAlpha(alpha);
     leftBottomKnobs.lookaheadSlider.setAlpha(alpha);
     leftBottomKnobs.clipSlider.setAlpha(alpha);
-    leftTopKnobs.againSlider.setAlpha(alpha);
     
-    rightTopControls.algoSlider.setAlpha(alpha);
+    rightTopControls.rangeSlider.setAlpha(alpha);
     rightTopControls.reactSlider.setAlpha(alpha);
+    rightTopControls.smoothSlider.setAlpha(alpha);
     
     rightBottomKnobs.atkSlider.setAlpha(alpha);
     rightBottomKnobs.relSlider.setAlpha(alpha);
-    rightBottomKnobs.autorelButton.setAlpha(alpha);
+    rightBottomKnobs.holdSlider.setAlpha(alpha);
     // speedButton removed
-    leftBottomKnobs.parallSlider.setAlpha(alpha);
-    rightTopControls.smoothSlider.setAlpha(alpha);
     
     // Transfer display
     transferDisplay.setAlpha(alpha);
@@ -3270,7 +3218,7 @@ void JCBCompressorAudioProcessorEditor::applyAlphaToMainControls(float alpha)
 //==============================================================================
 // THREAD SAFETY Y AUTOMATIZACIÓN
 //==============================================================================
-void JCBCompressorAudioProcessorEditor::queueParameterUpdate(const juce::String& paramID, float normalizedValue)
+void JCBExpanderAudioProcessorEditor::queueParameterUpdate(const juce::String& paramID, float normalizedValue)
 {
     {
         std::lock_guard<std::mutex> lock(parameterUpdateMutex);
@@ -3293,7 +3241,7 @@ void JCBCompressorAudioProcessorEditor::queueParameterUpdate(const juce::String&
     hasPendingParameterUpdates.store(true);
 }
 
-void JCBCompressorAudioProcessorEditor::processPendingParameterUpdates()
+void JCBExpanderAudioProcessorEditor::processPendingParameterUpdates()
 {
     if (!hasPendingParameterUpdates.exchange(false)) {
         return;
@@ -3337,9 +3285,6 @@ void JCBCompressorAudioProcessorEditor::processPendingParameterUpdates()
             if (boolParam) {
                 float realValue = update.normalizedValue >= 0.5f ? 1.0f : 0.0f;
 
-                if (update.paramID == "s_AUTORELEASE") {
-                    // Debug info for DEFAULT preset bool parameter updates
-                }
                 
                 // Llamar al método parameterChanged del processor para sincronizar con Gen~
                 processor.parameterChanged(update.paramID, realValue);
@@ -3357,10 +3302,10 @@ void JCBCompressorAudioProcessorEditor::processPendingParameterUpdates()
 // DIAGRAM Y CODE WINDOW
 //==============================================================================
 
-void JCBCompressorAudioProcessorEditor::showDiagram()
+void JCBExpanderAudioProcessorEditor::showDiagram()
 {
     // Thread-safe: usar MessageManager::callAsync para UI pesadas
-    juce::Component::SafePointer<JCBCompressorAudioProcessorEditor> safeThis(this);
+    juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeThis(this);
     
     juce::MessageManager::callAsync([safeThis]() {
         if (!safeThis) return;
@@ -3380,7 +3325,7 @@ void JCBCompressorAudioProcessorEditor::showDiagram()
     });
 }
 
-void JCBCompressorAudioProcessorEditor::hideDiagram()
+void JCBExpanderAudioProcessorEditor::hideDiagram()
 {
     if (diagramOverlay && diagramOverlay->isVisible())
     {
@@ -3390,7 +3335,7 @@ void JCBCompressorAudioProcessorEditor::hideDiagram()
     centerButtons.diagramButton.setToggleState(false, juce::dontSendNotification);
 }
 
-void JCBCompressorAudioProcessorEditor::hideCodeWindow()
+void JCBExpanderAudioProcessorEditor::hideCodeWindow()
 {
     if (codeWindow && codeWindow->isVisible())
     {
@@ -3399,7 +3344,7 @@ void JCBCompressorAudioProcessorEditor::hideCodeWindow()
     }
 }
 
-juce::String JCBCompressorAudioProcessorEditor::loadCodeFromFile(const juce::String& blockName)
+juce::String JCBExpanderAudioProcessorEditor::loadCodeFromFile(const juce::String& blockName)
 {
     // Thread-safe: usar cache pre-cargado en lugar de leer BinaryData cada vez
     if (codeContentCacheInitialized && codeContentCache.find(blockName) != codeContentCache.end()) {
@@ -3410,7 +3355,7 @@ juce::String JCBCompressorAudioProcessorEditor::loadCodeFromFile(const juce::Str
     return "// Code for " + blockName + "\n\n// Content not found in cache.\n// Please report this issue.\n\n// Basic functionality:\n" + getBasicBlockDescription(blockName);
 }
 
-void JCBCompressorAudioProcessorEditor::initializeCodeContentCache()
+void JCBExpanderAudioProcessorEditor::initializeCodeContentCache()
 {
     if (codeContentCacheInitialized) return;
     
@@ -3454,7 +3399,7 @@ void JCBCompressorAudioProcessorEditor::initializeCodeContentCache()
     codeContentCacheInitialized = true;
 }
 
-juce::String JCBCompressorAudioProcessorEditor::getBasicBlockDescription(const juce::String& blockName)
+juce::String JCBExpanderAudioProcessorEditor::getBasicBlockDescription(const juce::String& blockName)
 {
     if (blockName == "TRIM IN") {
         return "// Input trim gain applied to main signal\ninput_trimmed = input * dbtoa(trim_db);";
@@ -3463,7 +3408,7 @@ juce::String JCBCompressorAudioProcessorEditor::getBasicBlockDescription(const j
     } else if (blockName == "FILTERS") {
         return "// HPF and LPF filters for sidechain processing\nfiltered_sc = lpf(hpf(sc_signal, hpf_freq), lpf_freq);";
     } else if (blockName == "DETECTOR") {
-        return "// Level detector with peak/RMS algorithm selection\nlevel = peak_rms_detector(filtered_sc, react_param, algo_param);";
+        return "// Level detector with react control\nlevel = detector(filtered_sc, react_param);";
     } else if (blockName == "GAIN CALC") {
         return "// Compressor gain calculation with ratio and knee\ngain_reduction = compressor_curve(level, threshold, ratio, knee);";
     } else if (blockName == "APPLY") {
@@ -3480,7 +3425,7 @@ juce::String JCBCompressorAudioProcessorEditor::getBasicBlockDescription(const j
 }
 
 // Función helper para obtener índice de parámetro por ID (robusta, compatible con el futuro)
-int JCBCompressorAudioProcessorEditor::getParameterIndexByID(const juce::String& parameterID)
+int JCBExpanderAudioProcessorEditor::getParameterIndexByID(const juce::String& parameterID)
 {
     auto& params = processor.getParameters();
     for (int i = 0; i < params.size(); ++i) {
@@ -3493,7 +3438,7 @@ int JCBCompressorAudioProcessorEditor::getParameterIndexByID(const juce::String&
     return -1; // Parámetro no encontrado
 }
 
-int JCBCompressorAudioProcessorEditor::getControlParameterIndex(juce::Component& control)
+int JCBExpanderAudioProcessorEditor::getControlParameterIndex(juce::Component& control)
 {
     // Mapear componentes UI a sus IDs de parámetro (robusta, compatible con el futuro)
     // Retornar -1 para componentes que no representan parámetros automatizables
@@ -3503,31 +3448,28 @@ int JCBCompressorAudioProcessorEditor::getControlParameterIndex(juce::Component&
     // Perillas Superiores Izquierdas (threshold, ratio, knee)
     if (&control == &leftTopKnobs.thdSlider) parameterID = "b_THD";
     else if (&control == &leftTopKnobs.ratioSlider) parameterID = "c_RATIO";
-    else if (&control == &leftTopKnobs.kneeSlider) parameterID = "h_KNEE";
+    else if (&control == &leftTopKnobs.kneeSlider) parameterID = "q_KNEE";
     
     // Perillas Inferiores Izquierdas (drywet, lookahead, clip, autogain)
     else if (&control == &leftBottomKnobs.drywetSlider) parameterID = "o_DRYWET";
     else if (&control == &leftBottomKnobs.lookaheadSlider) parameterID = "n_LOOKAHEAD";
     else if (&control == &leftBottomKnobs.clipSlider) parameterID = "u_SOFTCLIP";  // Corregido: ahora usa mapeo dinámico
-    else if (&control == &leftTopKnobs.againSlider) parameterID = "x_AUTOGAIN";
     
-    // Controles Superiores Derechos (algorithm, speed)
-    else if (&control == &rightTopControls.algoSlider) parameterID = "f_ALGO";
+    // Controles Superiores Derechos (range, react, smooth)
+    else if (&control == &rightTopControls.rangeSlider) parameterID = "h_RANGE";
     else if (&control == &rightTopControls.reactSlider) parameterID = "g_REACT";
+    else if (&control == &rightTopControls.smoothSlider) parameterID = "z_SMOOTH";
     
-    // Perillas Inferiores Derechas (attack, release, speed, parallel, smooth)
+    // Perillas Inferiores Derechas (attack, release, hold)
     else if (&control == &rightBottomKnobs.atkSlider) parameterID = "d_ATK";
     else if (&control == &rightBottomKnobs.relSlider) parameterID = "e_REL";
+    else if (&control == &rightBottomKnobs.holdSlider) parameterID = "f_HOLD";
     // speedButton removido - parámetro t_AUTORELEASESPEED ya no existe
-    else if (&control == &leftBottomKnobs.parallSlider) parameterID = "w_PARALLEL";
-    else if (&control == &rightTopControls.smoothSlider) parameterID = "z_SMOOTH";
     
     // Controles de Sidechain (filters, key)
     else if (&control == &sidechainControls.hpfSlider) parameterID = "j_HPF";
     else if (&control == &sidechainControls.lpfSlider) parameterID = "k_LPF";
     else if (&control == &sidechainControls.keyButton) parameterID = "r_KEY";
-    else if (&control == &sidechainControls.hpfOrderButton) parameterID = "j_HPFORDER";
-    else if (&control == &sidechainControls.lpfOrderButton) parameterID = "k_LPFORDER";
     
     // Sliders de Trim
     else if (&control == &trimSlider) parameterID = "a_TRIM";
@@ -3535,7 +3477,6 @@ int JCBCompressorAudioProcessorEditor::getControlParameterIndex(juce::Component&
     else if (&control == &scTrimSlider) parameterID = "y_SCTRIM";
     
     // Botones Automatizables
-    else if (&control == &rightBottomKnobs.autorelButton) parameterID = "s_AUTORELEASE";
     else if (&control == &sidechainControls.scButton) parameterID = "l_SC";
     
     // Parámetros no automatizables (retornar -1)
@@ -3553,7 +3494,7 @@ int JCBCompressorAudioProcessorEditor::getControlParameterIndex(juce::Component&
     return -1;
 }
 
-void JCBCompressorAudioProcessorEditor::applyMeterDecayIfNeeded()
+void JCBExpanderAudioProcessorEditor::applyMeterDecayIfNeeded()
 {
     // Sistema universal de decay para todos los DAWs
     // Basado en la solución recomendada en los foros de JUCE

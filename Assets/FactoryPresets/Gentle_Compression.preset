@@ -6,9 +6,7 @@
   <PARAM id="c_RATIO" value="2.0"/>
   <PARAM id="d_ATK" value="10.0"/>
   <PARAM id="e_REL" value="100.0"/>
-  <PARAM id="f_ALGO" value="1.0"/>
   <PARAM id="g_REACT" value="0.0"/>
-  <PARAM id="h_KNEE" value="5.0"/>
   <PARAM id="i_MAKEUP" value="0.0"/>
   <PARAM id="j_HPF" value="20.0"/>
   <PARAM id="k_LPF" value="20000.0"/>
@@ -18,11 +16,8 @@
   <PARAM id="o_DRYWET" value="1.0"/>
   <PARAM id="p_BYPASS" value="0.0"/>
   <PARAM id="r_KEY" value="0.0"/>
-  <PARAM id="s_AUTORELEASE" value="0.0"/>
   <PARAM id="u_SOFTCLIP" value="0.0"/>
   <PARAM id="v_DELTA" value="0.0"/>
-  <PARAM id="w_PARALLEL" value="0.0"/>
-  <PARAM id="x_AUTOGAIN" value="0.0"/>
   <PARAM id="y_SCTRIM" value="0.0"/>
   <PARAM id="z_SMOOTH" value="0.0"/>
 </PARAMETERS>

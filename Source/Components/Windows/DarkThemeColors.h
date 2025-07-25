@@ -1,7 +1,7 @@
 //==============================================================================
 //
 //  Copyright 2025 Juan Carlos Blancas
-//  This file is part of JCBCompressor and is licensed under the GNU General Public License v3.0 or later.
+//  This file is part of JCBExpander and is licensed under the GNU General Public License v3.0 or later.
 //
 //==============================================================================
 #pragma once
@@ -175,6 +175,22 @@ namespace DarkTheme
         auto solidColor = Colour(0xFFFFFFFF);  // Color blanco sólido sin gradiente
         auto gradient = ColourGradient(solidColor, bounds.getTopLeft(),
                                      solidColor, bounds.getBottomLeft(), false);
+        return gradient;
+    }
+    
+    // Gradiente azul para gain reduction meter (igual que output envelope)
+    inline ColourGradient createBlueGainReductionGradient(const Rectangle<float>& bounds)
+    {
+        // Gradiente usando los mismos colores que output meters - azul de claro a oscuro
+        const Colour outputBlue = Colour(0xFF6495ED);     // Azul de OUTPUT (arriba)
+        const Colour darkPurple = Colour(0xFF202245);     // Morado oscuro personalizado (abajo)
+        const Colour deepBlue = Colour(0xFF0D3B52);       // Azul profundo intermedio
+        
+        auto gradient = ColourGradient(outputBlue, bounds.getTopLeft(),
+                                     darkPurple, bounds.getBottomLeft(), false);
+        gradient.addColour(0.25, outputBlue.interpolatedWith(deepBlue, 0.5f));
+        gradient.addColour(0.5, deepBlue);
+        gradient.addColour(0.75, deepBlue.interpolatedWith(darkPurple, 0.5f));
         return gradient;
     }
     
