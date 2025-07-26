@@ -1,8 +1,8 @@
 // =============================================================================
-// FILTERS BLOCK - Filtros HPF/LPF para Sidechain
+// FILTERS BLOCK - Filtros HPF/LPF para Sidechain (EXPANDER)
 // =============================================================================
 // Filtros Butterworth de 2º orden (12 dB/oct) o 4º orden (24 dB/oct)
-// para procesar la señal de detección del compresor.
+// para procesar la señal de detección del expansor.
 //
 // ENTRADA:
 // - in1: Señal de sidechain (sidechainMixedSignal desde Input/Trim)

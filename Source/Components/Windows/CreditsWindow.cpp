@@ -324,11 +324,11 @@ void CreditsWindow::buildFullCreditsTextSpanish()
     links.clear();
     
     // Generar texto formateado con saltos de línea para llenar el diálogo
-    fullText = "\nJCBCompressor v0.9.992 beta";
+    fullText = "\nJCBExpander v0.9.1 beta";
     if (pluginFormat.isNotEmpty())
         fullText += " (" + pluginFormat + ")";
     fullText += "\n";
-    fullText += JUCE_UTF8(" Plugin de audio open-source hecho con Max → gen~ → Plugin Export → JUCE \n");
+    fullText += JUCE_UTF8(" Plugin de audio open source hecho con Max → gen~ → Plugin Export → JUCE \n");
     fullText += JUCE_UTF8(" © 2025 Juan Carlos Blancas \n\n");
 
     // Primer bloque: Tecnologías principales
@@ -373,7 +373,7 @@ void CreditsWindow::buildFullCreditsTextEnglish()
     links.clear();
 
     // Generar texto formateado con saltos de línea para llenar el diálogo
-    fullText = "\nJCBCompressor v0.9.992 beta";
+    fullText = "\nJCBExpander v0.9.1 beta";
     if (pluginFormat.isNotEmpty())
         fullText += " (" + pluginFormat + ")";
     fullText += "\n";

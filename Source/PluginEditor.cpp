@@ -2555,7 +2555,7 @@ juce::File JCBExpanderAudioProcessorEditor::getPresetsFolder()
         .getChildFile("Audio")
         .getChildFile("Presets")
         .getChildFile("Coeval")
-        .getChildFile("JCBCompressor");
+        .getChildFile("JCBExpander");
 
     if (!folder.isDirectory() && !folder.existsAsFile()) {
         folder.createDirectory();

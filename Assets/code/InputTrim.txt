@@ -1,11 +1,20 @@
 // =============================================================================
-// INPUT/TRIM BLOCK - Procesamiento de Entrada Principal y Sidechain
+// INPUT/TRIM BLOCK - Procesamiento de Entrada Principal y Sidechain (EXPANDER)
 // =============================================================================
-// Este bloque maneja las 4 entradas del compresor:
-// - in1/in2: Señal principal L/R a comprimir
+// Este bloque maneja las 4 entradas del expansor:
+// - in1/in2: Señal principal L/R a expandir
 // - in3/in4: Señal de sidechain L/R (para external key)
 //
-// IMPORTANTE: Este bloque también inicializa los delays de lookahead
+// SISTEMA DE LOOKAHEAD:
+// Este bloque ESCRIBE las señales actuales en los delays (sin retraso).
+// Los bloques GainCore y Output LEEN estas señales con retraso usando el
+// parámetro n_LOOKAHEAD, permitiendo que la detección "vea el futuro"
+// mientras el audio llega retrasado. Esto evita overshooting en transientes.
+//
+// CONEXIONES DE LOOKAHEAD:
+// - leftOutputDelay/rightOutputDelay → GainCore (audio para expansión)
+// - leftInputDelay/rightInputDelay → Output (audio para mezcla dry/wet)
+// - sidechainWriteDelay/sidechainTapDelay → Output (sidechain para solo SC)
 
 // PARÁMETROS
 Param a_TRIM(-12, min=-12, default=0, max=12);        // Input trim gain (dB)
