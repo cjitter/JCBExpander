@@ -434,27 +434,25 @@ void JCBExpanderAudioProcessorEditor::resized()
     // === LEFT SIDE KNOBS === (Between SC meters and transfer function)
     // Top row - THD, RANGE, RATIO, KNEE
     leftTopKnobs.thdSlider.setBounds(getScaledBounds(50, 48, 53, 53));
-    rightTopControls.rangeSlider.setBounds(getScaledBounds(100, 48, 53, 53));  // Moved from 475 to 100
-    leftTopKnobs.ratioSlider.setBounds(getScaledBounds(150, 48, 53, 53));      // Moved from 100 to 150
-    leftTopKnobs.kneeSlider.setBounds(getScaledBounds(200, 48, 53, 53));       // Moved from 150 to 200
-    // (200, 43, 53, 53)
+    rightTopControls.rangeSlider.setBounds(getScaledBounds(100, 48, 53, 53));
+    leftTopKnobs.ratioSlider.setBounds(getScaledBounds(150, 48, 53, 53));
+    leftTopKnobs.kneeSlider.setBounds(getScaledBounds(200, 48, 53, 53));
 
     // Bottom row - D/W, LA, CLIP (AGAIN está en fila superior)
-    leftBottomKnobs.drywetSlider.setBounds(getScaledBounds(50, 100, 53, 53));
-    leftBottomKnobs.lookaheadSlider.setBounds(getScaledBounds(100, 100, 53, 53));  // LA → x=100
-    leftBottomKnobs.clipSlider.setBounds(getScaledBounds(150, 100, 53, 53));  // CLIP → x=150
-    // (150, 100, 53, 53)
+    leftBottomKnobs.drywetSlider.setBounds(getScaledBounds(74, 100, 53, 53));
+    leftBottomKnobs.lookaheadSlider.setBounds(getScaledBounds(124, 100, 53, 53));
+    leftBottomKnobs.clipSlider.setBounds(getScaledBounds(174, 100, 53, 53));
 
     // === RIGHT SIDE CONTROLS ===
     // Top row - REACT, SMOOTH knobs (RANGE moved to left side)
-    rightTopControls.reactSlider.setBounds(getScaledBounds(475, 48, 53, 53));  // Moved from 529 to 475 (where RANGE was)
-    rightTopControls.smoothSlider.setBounds(getScaledBounds(529, 48, 53, 53));  // Moved from 581 to 529
+    rightTopControls.reactSlider.setBounds(getScaledBounds(505, 48, 53, 53));
+    rightTopControls.smoothSlider.setBounds(getScaledBounds(565, 48, 53, 53));
 
     // Bottom row - Attack, Release, Hold
-    rightBottomKnobs.atkSlider.setBounds(getScaledBounds(500, 100, 53, 53));
-    rightBottomKnobs.relSlider.setBounds(getScaledBounds(557, 100, 53, 53));  // Juntado con ATK
-    rightBottomKnobs.holdSlider.setBounds(getScaledBounds(614, 100, 53, 53));  // Donde estaba AUTO REL
-    
+    rightBottomKnobs.atkSlider.setBounds(getScaledBounds(473, 100, 53, 53));
+    rightBottomKnobs.holdSlider.setBounds(getScaledBounds(532, 100, 53, 53));
+    rightBottomKnobs.relSlider.setBounds(getScaledBounds(592, 100, 53, 53));
+
     // === SIDECHAIN CONTROLS (TOP CENTER) ===
     // HPF and LPF knobs swapped with their order buttons
     // Botón orden HPF ahora a la izquierda, perilla HPF se mueve a la derecha
@@ -1134,7 +1132,7 @@ void JCBExpanderAudioProcessorEditor::setupKnobs()
     leftTopKnobs.kneeSlider.setLookAndFeel(&sliderLAFBig);
     leftTopKnobs.kneeSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     leftTopKnobs.kneeSlider.setTextValueSuffix(" dB");
-    leftTopKnobs.kneeSlider.setDoubleClickReturnValue(true, 0.0);
+    leftTopKnobs.kneeSlider.setDoubleClickReturnValue(true, 1.0);
     leftTopKnobs.kneeSlider.setPopupDisplayEnabled(false, false, this);
     leftTopKnobs.kneeSlider.setNumDecimalPlacesToDisplay(1);  // Solo 1 decimal
     addAndMakeVisible(leftTopKnobs.kneeSlider);
@@ -1227,7 +1225,7 @@ void JCBExpanderAudioProcessorEditor::setupKnobs()
     rightBottomKnobs.atkSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 16);
     rightBottomKnobs.atkSlider.setLookAndFeel(&sliderLAFBig);
     rightBottomKnobs.atkSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    rightBottomKnobs.atkSlider.setDoubleClickReturnValue(true, 5.0);  // Valor por defecto 5ms
+    rightBottomKnobs.atkSlider.setDoubleClickReturnValue(true, 1.0);  // Valor por defecto 1ms
     rightBottomKnobs.atkSlider.setPopupDisplayEnabled(false, false, this);
     rightBottomKnobs.atkSlider.setTextBoxIsEditable(true);
     // Custom text formatting con decimales progresivos
@@ -1261,7 +1259,7 @@ void JCBExpanderAudioProcessorEditor::setupKnobs()
     rightBottomKnobs.relSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     rightBottomKnobs.relSlider.setRange(0.1, 1000.0, 0.01);  // Coherente con parámetro
     rightBottomKnobs.relSlider.setSkewFactorFromMidPoint(30.0);  // Centrar rango operativo 1-50ms
-    rightBottomKnobs.relSlider.setDoubleClickReturnValue(true, 30.0);  // Valor por defecto 30ms
+    rightBottomKnobs.relSlider.setDoubleClickReturnValue(true, 120.0);  // Valor por defecto 120ms
     rightBottomKnobs.relSlider.setPopupDisplayEnabled(false, false, this);
     rightBottomKnobs.relSlider.setTextBoxIsEditable(true);
     // Custom text formatting con decimales progresivos - coherente con parámetro
@@ -2955,6 +2953,11 @@ void JCBExpanderAudioProcessorEditor::showCustomAlertDialog(const juce::String& 
 
 void JCBExpanderAudioProcessorEditor::showCredits()
 {
+    // Desactivar estados operacionales antes de mostrar créditos (consistencia con DIAGRAM)
+    parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
+    parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
+    sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+    
     if (creditsOverlay == nullptr)
     {
         // Obtener el formato del plugin desde el processor
@@ -3090,23 +3093,23 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     if (currentLanguage == TooltipLanguage::Spanish)
     {
         // Spanish tooltips
-        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.1 beta\nPlugin educativo open source\nClick para créditos");
+        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.1 beta\nPlugin de audio open source\nClick para créditos");
         if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la expansión\nSeñales bajo este nivel se expanden\nRango: -60 a 0 dB | Por defecto: -18 dB");
-        if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 0.95:1 a 40:1 | Por defecto: 4:1");
-        if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 5 dB");
+        if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 1:1 a 40:1 | Por defecto: 4:1");
+        if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 1 dB");
         if (key == "drywet") return JUCE_UTF8("DRY/WET: mezcla final entre señal original y procesada\nControl de balance entrada/salida\nRango: 0 a 100% | Por defecto: 100%");
         if (key == "lookahead") return JUCE_UTF8("LOOK AHEAD: retardo para evitar overshooting\nReporta latencia al host\nRango: 0 a 10 ms | Por defecto: 0 ms");
         if (key == "clip") return JUCE_UTF8("SOFT CLIP: limitador suave de salida\nPreviene saturación con distorsión armónica\nRango: 0/OFF a 1 | Por defecto: 0/OFF");
-        if (key == "react") return JUCE_UTF8("REACT: respuesta del detector a transientes.\nValores bajos: suave | Valores altos: agresivo.\nRango: 0 a 100% | Por defecto: 0%");
-        if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima expansión\nVelocidad de respuesta del expansor\nRango: 0.1 a 250 ms | Por defecto: 5 ms");
-        if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin expansión\nPermite valores extremos para efectos creativos\nRango: 0.1 a 1000 ms | Por defecto: 30 ms");
+        if (key == "react") return JUCE_UTF8("REACT: respuesta del detector a transientes.\nValores bajos: agresivo | Valores altos: suave.\nRango: 0 a 1 | Por defecto: 0");
+        if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima expansión\nVelocidad de respuesta del expansor\nRango: 0.1 a 250 ms | Por defecto: 1 ms");
+        if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin expansión\nPermite valores extremos para efectos creativos\nRango: 0.1 a 1000 ms | Por defecto: 120 ms");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
         if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel máximo de reducción de ganancia\nRango: -60 a 0 dB | Por defecto: -20 dB");
         if (key == "delta") return JUCE_UTF8("DELTA: escucha la expansión aplicada\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
         if (key == "trim") return JUCE_UTF8("TRIM INPUT: ganancia de entrada al expansor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de salida manual\nAjusta el nivel final después del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
-        if (key == "sc") return JUCE_UTF8("SC: activa los filtros del sidechain interno.\nPermite filtrar la señal, tanto interna como externa, que controla el expansor.\nValor por defecto: OFF");
+        if (key == "sc") return JUCE_UTF8("FILTERS: activa los filtros del sidechain.\nPermite filtrar la señal, tanto interna como externa, que controla el expansor.\nValor por defecto: OFF");
         if (key == "extkey") return JUCE_UTF8("EXTERNAL KEY: activa sidechain externo\nUsa entrada auxiliar para controlar expansión\nRango: OFF/ON | Por defecto: OFF");
         if (key == "solosc") return JUCE_UTF8("SOLO SC: escucha filtros sidechain int/ext\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
         if (key == "hpf") return JUCE_UTF8("HPF: filtro pasa altos del sidechain\nFiltra frecuencias del detector de expansión\nRango: 20 a 20k Hz | Por defecto: 20 Hz");
@@ -3133,23 +3136,23 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     else
     {
         // English tooltips
-        if (key == "title") return "JCBExpander: audio expander v0.9.1 beta\nOpen source educational plugin\nClick for credits";
+        if (key == "title") return "JCBExpander: audio expander v0.9.1 beta\nOpen source audio plugin\nClick for credits";
         if (key == "thd") return "THRESHOLD: level where expansion begins\nSignals below this level are expanded\nRange: -60 to 0 dB | Default: -18 dB";
-        if (key == "ratio") return "RATIO: amount of expansion applied\nInput/output relationship below threshold\nRange: 0.95:1 to 40:1 | Default: 4:1";
-        if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 1 to 20 dB | Default: 5 dB";
+        if (key == "ratio") return "RATIO: amount of expansion applied\nInput/output relationship below threshold\nRange: 1:1 to 40:1 | Default: 4:1";
+        if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 1 to 10 dB | Default: 1 dB";
         if (key == "drywet") return "DRY/WET: final mix between original and processed signal\nInput/output balance control\nRange: 0 to 100% | Default: 100%";
         if (key == "lookahead") return "LOOK AHEAD: delay to prevent overshooting\nReports latency to host\nRange: 0 to 10 ms | Default: 0 ms";
         if (key == "clip") return "SOFT CLIP: soft output limiter\nPrevents clipping with harmonic distortion\nRange: 0/OFF to 1 | Default: 0/OFF";
-        if (key == "react") return "REACT: detector response to transients.\nLow values: smooth | High values: aggressive.\nRange: 0 to 100% | Default: 0%";
-        if (key == "attack") return "ATTACK: time to reach maximum expansion\nExpander response speed\nRange: 0.1 to 250 ms | Default: 5 ms";
-        if (key == "release") return "RELEASE: time to return unexpanded\nAllows extreme values for creative effects\nRange: 0.1 to 1000 ms | Default: 30 ms";
+        if (key == "react") return "REACT: detector response to transients.\nLow values: aggressive | High values: smooth.\nRange: 0 to 1 | Default: 0";
+        if (key == "attack") return "ATTACK: time to reach maximum expansion\nExpander response speed\nRange: 0.1 to 250 ms | Default: 1 ms";
+        if (key == "release") return "RELEASE: time to return unexpanded\nAllows extreme values for creative effects\nRange: 0.1 to 1000 ms | Default: 120 ms";
         if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
         if (key == "range") return "RANGE: lower limit of expansion\nMaximum level of gain reduction\nRange: -60 to 0 dB | Default: -20 dB";
         if (key == "delta") return "DELTA: listen to applied expansion\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
         if (key == "trim") return "TRIM INPUT: expander input gain\nAdjusts level before processing\nRange: -12 to +12 dB | Default: 0 dB";
         if (key == "makeup") return "MAKEUP: manual output gain\nAdjusts final level after processing\nRange: -12 to +12 dB | Default: 0 dB";
         if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
-        if (key == "sc") return "SC: activates internal sidechain filters.\nAllows filtering the signal, both internal and external, that controls the expander.\nDefault: OFF";
+        if (key == "sc") return "FILTERS: activates sidechain filters.\nAllows filtering the signal, both internal and external, that controls the expander.\nDefault: OFF";
         if (key == "extkey") return "EXTERNAL KEY: enables external sidechain\nUses auxiliary input to control expansion\nRange: OFF/ON | Default: OFF";
         if (key == "solosc") return "SOLO SC: listen to int/ext sidechain filters\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
         if (key == "hpf") return "HPF: sidechain high-pass filter\nFilters frequencies from expansion detector\nRange: 20 to 20k Hz | Default: 20 Hz";

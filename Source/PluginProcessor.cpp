@@ -724,7 +724,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
        juce::ParameterID("d_ATK", versionHint),
        juce::CharPointer_UTF8("Attack"),
        atkRange,
-       5.0f,  // valor por defecto
+       1.0f,  // valor por defecto
        juce::String(),
        juce::AudioParameterFloat::genericParameter,
        [](float value, int){
@@ -763,7 +763,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
        juce::ParameterID("e_REL", versionHint),
        juce::CharPointer_UTF8("Release"),
        relRange,
-       30.0f,  // valor por defecto
+       120.0f,  // valor por defecto
        juce::String(),
        juce::AudioParameterFloat::genericParameter,
        [](float value, int){
@@ -836,7 +836,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
    auto knee = std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("q_KNEE", versionHint),
                                                            juce::CharPointer_UTF8("Knee"),
                                                            juce::NormalisableRange<float>(1.f, 10.f, 0.1f, 1.f),
-                                                           5.f);
+                                                           1.f);
 
    // i_MAKEUP @min -12 @max 12 @default 0
    auto makeup = std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("i_MAKEUP", versionHint),
