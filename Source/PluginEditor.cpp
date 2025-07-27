@@ -513,7 +513,7 @@ void JCBExpanderAudioProcessorEditor::resized()
     
     // Botones TODO movidos abajo a la derecha, centrados en el rectángulo
     // Calcular posición central para el grupo de botones TODO
-    const int todoStartX = 500;    // Movido a la derecha para mejor centrado en el rectángulo
+    const int todoStartX = 503;    // Movido a la derecha para mejor centrado en el rectángulo
     const int todoY = 179;       // Mismo Y que botones de utilidad
     utilityButtons.hqButton.setBounds(getScaledBounds(todoStartX, todoY, 18, 12));
     utilityButtons.dualMonoButton.setBounds(getScaledBounds(todoStartX + 20, todoY, 23, 12));
@@ -3156,7 +3156,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "resetgui") return JUCE_UTF8("SIZE: cicla entre tamaños de ventana\nActual → Máximo → Mínimo → Actual\nAjuste rápido del tamaño del plugin");
         if (key == "bypass") return JUCE_UTF8("BYPASS: desactiva el procesamiento del plugin\nParámetro global, no automatizable. Transición suave\nRango: OFF/ON | Por defecto: OFF");
         if (key == "graphics") return JUCE_UTF8("GRAPHICS: muestra envolventes en tiempo real\nVisualiza env entrada/salida e histograma expansión\nDesactivar mejora rendimiento en CPUs lentas");
-        if (key == "zoom") return JUCE_UTF8("ZOOM: cicla entre vista normal y ampliada\nNormal: -72 a 0dB | x2: -48 a 0dB");
+        if (key == "zoom") return JUCE_UTF8("ZOOM: cicla entre vista normal y ampliada\nNormal: -100 a 0dB | x2: -50 a 0dB");
         if (key == "diagram") return JUCE_UTF8("DIAGRAM: muestra diagrama de bloques del procesador\nDespliega menú con código GenExpr por bloque para copiar");
         if (key == "transfer") return JUCE_UTF8("GRÁFICA: función de transferencia del expansor\nArrastra para modificar THD, Ratio y Knee\nClick derecho para opciones adicionales");
         if (key == "tooltiptoggle") return JUCE_UTF8("TOOLTIP: muestra/oculta los tooltips de ayuda\nActiva o desactiva las ventanas de ayuda emergentes");
@@ -3199,7 +3199,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "resetgui") return JUCE_UTF8("SIZE: cycles through window sizes\nCurrent → Maximum → Minimum → Current\nQuick plugin size adjustment");
         if (key == "bypass") return "BYPASS: disables plugin processing\nGlobal parameter, non-automatable. Smooth transition\nRange: OFF/ON | Default: OFF";
         if (key == "graphics") return "GRAPHICS: shows real-time envelopes\nDisplays input/output env and expansion histogram\nDisable to improve performance on slow CPUs";
-        if (key == "zoom") return "ZOOM: cycles between normal and zoomed view\nNormal: -72 to 0dB | x2: -48 to 0dB";
+        if (key == "zoom") return "ZOOM: cycles between normal and zoomed view\nNormal: -100 to 0dB | x2: -50 to 0dB";
         if (key == "diagram") return "DIAGRAM: shows processor block diagram\nDisplays menu with GenExpr code per block for copying";
         if (key == "transfer") return "GRAPH: expander transfer function\nDrag to modify THD, Ratio and Knee\nRight click for additional options";
         if (key == "tooltiptoggle") return "TOOLTIP: show/hide help tooltips.\nEnables or disables popup help windows.";
@@ -3407,7 +3407,7 @@ void JCBExpanderAudioProcessorEditor::initializeCodeContentCache()
     std::vector<CodeMapping> mappings = {
         {"TRIM IN", BinaryData::InputTrim_txt, BinaryData::InputTrim_txtSize},
         {"TRIM SC", BinaryData::InputTrim_txt, BinaryData::InputTrim_txtSize},
-        {"LOOKAHEAD", BinaryData::GainCore_txt, BinaryData::GainCore_txtSize},
+        {"LOOKAHEAD", BinaryData::Output_txt, BinaryData::Output_txtSize},
         {"FILTERS", BinaryData::Filters_txt, BinaryData::Filters_txtSize},
         {"DETECTOR", BinaryData::Detector_txt, BinaryData::Detector_txtSize},
         {"GAIN CALC", BinaryData::GainCalc_txt, BinaryData::GainCalc_txtSize},

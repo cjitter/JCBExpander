@@ -483,7 +483,7 @@ void JCBExpanderAudioProcessor::updateGainReductionMeter()
         finalAveragedLinear = std::max(finalAveragedLinear, minLinearValue);
         valueGR_dB = juce::Decibels::gainToDecibels(finalAveragedLinear);
         // Clampear al rango del slider
-        valueGR_dB = juce::jlimit(-72.0f, 0.0f, valueGR_dB);
+        valueGR_dB = juce::jlimit(-100.0f, 0.0f, valueGR_dB);
     }
     
     // CRÍTICO: Usar atomic store para thread safety

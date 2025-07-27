@@ -28,6 +28,7 @@
 #include "Components/Windows/CustomDialog.h"
 #include "Components/Windows/UndoableButtonAttachment.h"
 #include "Components/Windows/CodeWindow.h"
+#include "Components/Windows/DarkThemeColors.h"
 
 // Forward declaration para CreditsOverlay (usado en std::unique_ptr<CreditsOverlay> creditsOverlay)
 class CreditsOverlay;
@@ -571,7 +572,14 @@ private:
                     // Cargar código desde cache thread-safe
                     juce::String genCode = safeOwner->loadCodeFromFile(blockName);
                     
-                    safeOwner->codeWindow->setCode(genCode, blockName);
+                    // Determinar título de ventana: usar "OUTPUT" para bloques específicos
+                    juce::String windowTitle = blockName;
+                    if (blockName == "LOOKAHEAD" || blockName == "MAKEUP" || 
+                        blockName == "OUTPUT" || blockName == "DELTA") {
+                        windowTitle = "OUTPUT";
+                    }
+                    
+                    safeOwner->codeWindow->setCode(genCode, windowTitle);
                     
                     // Configurar colores: fondo negro sólido, texto blanco
                     safeOwner->codeWindow->setHaloColour(juce::Colours::white);
@@ -676,13 +684,41 @@ private:
                 {"GAIN CORE", 322.2f, 50.0f, 44.4f, 41.7f},
                 
                 // Sección de salida
-                {"MAKEUP", 376.7f, 54.4f, 79.4f, 33.3f},
-                {"PARALLEL", 461.1f, 54.4f, 76.1f, 33.3f},
+                {"MAKEUP", 468.0f, 54.4f, 50.4f, 33.3f},
+                //{"PARALLEL", 461.1f, 54.4f, 76.1f, 33.3f},
                 {"OUTPUT", 540.0f, 54.4f, 82.2f, 33.3f},
                 {"DELTA", 519.4f, 115.6f, 47.8f, 29.4f}
             };
             
             clickableAreasCached = true;
+        }
+        
+        // Obtener color específico por bloque para efectos hover dinámicos
+        juce::Colour getBlockColor(const juce::String& blockName)
+        {
+            // Mapeo de bloques a colores temáticos basado en función:
+            // Verde: Parámetros de detector (ATK, REL, HOLD, REACT, SMO) y modo DELTA
+            // Púrpura: Parámetros de ganancia (THD, RATIO, KNEE, RANGE) y parallel
+            // Azul: Procesamiento core, salida, makeup y temporal (lookahead)
+            // Blanco: Filtros sidechain (HPF, LPF)
+            // Gris: Controles de nivel (trim)
+            
+            if (blockName == "DETECTOR")
+                return juce::Colour(0xFF1DB954);  // Verde Spotify (parámetros ATK, REL, HOLD, REACT, SMO)
+            else if (blockName == "GAIN CALC")
+                return DarkTheme::accentSecondary;  // Púrpura (parámetros THD, RATIO, KNEE, RANGE)
+            else if (blockName == "GAIN CORE" || blockName == "MAKEUP" || blockName == "OUTPUT" || blockName == "LOOKAHEAD")
+                return DarkTheme::accent;  // Azul (procesamiento core, salida, temporal)
+            else if (blockName == "FILTERS")
+                return DarkTheme::textPrimary;  // Blanco (filtros HPF, LPF sidechain)
+            else if (blockName == "PARALLEL")
+                return DarkTheme::accentSecondary;  // Púrpura (parallel)
+            else if (blockName == "TRIM IN" || blockName == "TRIM SC")
+                return DarkTheme::textSecondary;  // Gris claro (controles de nivel)
+            else if (blockName == "DELTA")
+                return juce::Colour(0xFF1DB954);  // Verde para modo DELTA
+            else
+                return juce::Colours::lightblue;  // Fallback al color original
         }
         
         void drawHoverGlow(juce::Graphics& g)
@@ -700,20 +736,21 @@ private:
                     auto scaledBounds = owner.getScaledBounds(area.x, area.y, area.w, area.h);
                     juce::Rectangle<float> baseRect = scaledBounds.toFloat();
                     
-                    // Efecto glow de dos capas (similar al preset menu)
+                    // Efecto glow de dos capas con color dinámico según el bloque
+                    juce::Colour blockColor = getBlockColor(hoveredBlockName);
                     
                     // Capa exterior - glow más amplio y sutil
                     juce::Rectangle<float> outerGlow = baseRect.expanded(12.0f);
-                    g.setColour(juce::Colours::lightblue.withAlpha(0.15f));
+                    g.setColour(blockColor.withAlpha(0.15f));
                     g.fillRoundedRectangle(outerGlow, 8.0f);
                     
-                    // Capa interior - glow más intenso y cercano
+                    // Capa interior - glow más intenso y cercano (color más cálido)
                     juce::Rectangle<float> innerGlow = baseRect.expanded(6.0f);
-                    g.setColour(juce::Colours::lightcyan.withAlpha(0.25f));
+                    g.setColour(blockColor.brighter(0.2f).withAlpha(0.25f));
                     g.fillRoundedRectangle(innerGlow, 6.0f);
                     
                     // Borde sutil para definir el área
-                    g.setColour(juce::Colours::lightblue.withAlpha(0.4f));
+                    g.setColour(blockColor.withAlpha(0.4f));
                     g.drawRoundedRectangle(baseRect.expanded(2.0f), 4.0f, 1.5f);
                     
                     break; // Solo uno a la vez

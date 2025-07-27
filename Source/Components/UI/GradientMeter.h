@@ -157,20 +157,20 @@ public:
         g.setColour(DarkTheme::backgroundDark.withAlpha(0.4f));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 1.5f, 1.0f);
         
-        // Solo mostrar el gradiente si hay señal por encima del umbral (-75 dB)
+        // Solo mostrar el gradiente si hay señal por encima del umbral (-95 dB)
         const float currentSmoothedLevel = smoothedLevel.load(std::memory_order_relaxed);
-        if (currentSmoothedLevel > -75.0f) {
+        if (currentSmoothedLevel > -95.0f) {
             // Relleno del medidor RMS con gradiente del tema oscuro
             g.setGradientFill(gradient);
-            const auto scaledY = juce::jmap(currentSmoothedLevel, -80.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
+            const auto scaledY = juce::jmap(currentSmoothedLevel, -100.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
             auto fillBounds = bounds.reduced(1.0f);
             g.fillRoundedRectangle(fillBounds.removeFromBottom(scaledY), 1.5f);
         }
         
         // Indicador de peak - línea delgada en la posición del peak
         const float currentPeakLevel = peakLevel.load(std::memory_order_relaxed);
-        if (currentPeakLevel > -75.0f) {
-            const auto peakY = getHeight() - 3 - juce::jmap(currentPeakLevel, -80.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
+        if (currentPeakLevel > -95.0f) {
+            const auto peakY = getHeight() - 3 - juce::jmap(currentPeakLevel, -100.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
             g.setColour(DarkTheme::accent.brighter(0.3f).withAlpha(0.8f));
             g.fillRect(bounds.getX() + 1, peakY - 1, bounds.getWidth() - 2, 2.0f);
         }
@@ -340,12 +340,12 @@ public:
         g.setColour(DarkTheme::meterBackground.withAlpha(0.3f));
         g.fillRoundedRectangle(bounds, 2.0f);
         
-        // Solo mostrar nivel si está por encima del umbral (-75 dB como los principales)
+        // Solo mostrar nivel si está por encima del umbral (-95 dB como los principales)
         const float currentSmoothedLevel = smoothedLevel.load(std::memory_order_relaxed);
-        if (currentSmoothedLevel > -75.0f) {
+        if (currentSmoothedLevel > -95.0f) {
             // Usar gradiente de medidor de entrada con transparencia
             g.setGradientFill(gradient);
-            const auto scaledY = juce::jmap(currentSmoothedLevel, -80.f, 0.f, 0.f, static_cast<float>(getHeight() - 2));
+            const auto scaledY = juce::jmap(currentSmoothedLevel, -100.f, 0.f, 0.f, static_cast<float>(getHeight() - 2));
             auto fillBounds = bounds.reduced(1.0f);
             
             // Aplicar transparencia adicional al relleno
@@ -356,8 +356,8 @@ public:
         
         // Indicador de peak - línea delgada en la posición del peak (más sutil)
         const float currentPeakLevel = peakLevel.load(std::memory_order_relaxed);
-        if (currentPeakLevel > -75.0f) {
-            const auto peakY = getHeight() - 2 - juce::jmap(currentPeakLevel, -80.f, 0.f, 0.f, static_cast<float>(getHeight() - 2));
+        if (currentPeakLevel > -95.0f) {
+            const auto peakY = getHeight() - 2 - juce::jmap(currentPeakLevel, -100.f, 0.f, 0.f, static_cast<float>(getHeight() - 2));
             g.setColour(DarkTheme::meterClip.withAlpha(0.6f));  // Usar el color azul del tope del gradiente
             g.fillRect(bounds.getX() + 1, peakY - 0.5f, bounds.getWidth() - 2, 1.0f);
         }
@@ -497,22 +497,22 @@ public:
         
         // Medidor de reducción de ganancia - FINAL: barra blanca muestra reducción
         // 0 dB = sin reducción/reposo = sin barra (oscuro)  
-        // -72 dB = máxima reducción = barra llena (gradiente visible)
+        // -100 dB = máxima reducción = barra llena (gradiente visible)
         const float currentSmoothedValue = smoothedValue.load(std::memory_order_relaxed);
         
-        // Mapear valores dB del procesador (0 a -72 dB) a altura de barra  
+        // Mapear valores dB del procesador (0 a -100 dB) a altura de barra  
         // currentSmoothedValue ahora viene en dB desde el MovingAverage4800
         float barHeight;
         
-        // Rango de trabajo: 0 dB (sin reducción) a -72 dB (máxima reducción)
+        // Rango de trabajo: 0 dB (sin reducción) a -100/-50 dB (máxima reducción)
         const float minReduction = 0.0f;    // Sin reducción (sin barra)
-        const float maxReduction = -72.0f;  // Máxima reducción (barra llena)
+        const float maxReduction = isZoomed ? -50.0f : -100.0f;  // Zoom x2: -50dB, Normal: -100dB
         
         // Mapeo correcto: valores más negativos = más barra blanca
         float fillRatio = juce::jmap(currentSmoothedValue, minReduction, maxReduction, 0.0f, 1.0f);
         fillRatio = juce::jlimit(0.0f, 1.0f, fillRatio);
         
-        // Calcular altura de barra (0 dB = sin barra, -72 dB = barra llena)
+        // Calcular altura de barra (0 dB = sin barra, -100/-50 dB = barra llena según zoom)
         barHeight = (getHeight() - 3) * fillRatio;
         
         // Dibujar el gradiente desde arriba con la altura calculada - BARRA MÁS ESTRECHA
@@ -695,20 +695,20 @@ public:
         g.setColour(DarkTheme::backgroundDark.withAlpha(0.4f));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 1.5f, 1.0f);
         
-        // Solo mostrar el gradiente si hay señal por encima del umbral (-75 dB)
+        // Solo mostrar el gradiente si hay señal por encima del umbral (-95 dB)
         const float currentSmoothedLevel = smoothedLevel.load(std::memory_order_relaxed);
-        if (currentSmoothedLevel > -75.0f) {
+        if (currentSmoothedLevel > -95.0f) {
             // Relleno del medidor RMS con gradiente invertido (violeta arriba, azul abajo)
             g.setGradientFill(gradient);
-            const auto scaledY = juce::jmap(currentSmoothedLevel, -80.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
+            const auto scaledY = juce::jmap(currentSmoothedLevel, -100.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
             auto fillBounds = bounds.reduced(1.0f);
             g.fillRoundedRectangle(fillBounds.removeFromBottom(scaledY), 1.5f);
         }
         
         // Indicador de peak - línea delgada en la posición del peak
         const float currentPeakLevel = peakLevel.load(std::memory_order_relaxed);
-        if (currentPeakLevel > -75.0f) {
-            const auto peakY = getHeight() - 3 - juce::jmap(currentPeakLevel, -80.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
+        if (currentPeakLevel > -95.0f) {
+            const auto peakY = getHeight() - 3 - juce::jmap(currentPeakLevel, -100.f, 0.f, 0.f, static_cast<float>(getHeight() - 3));
             g.setColour(DarkTheme::accentSecondary.brighter(0.3f).withAlpha(0.8f));
             g.fillRect(bounds.getX() + 1, peakY - 1, bounds.getWidth() - 2, 2.0f);
         }

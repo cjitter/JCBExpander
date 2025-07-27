@@ -204,11 +204,11 @@ void TransferFunctionDisplay::drawGrid(juce::Graphics& g, juce::Rectangle<float>
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -222,12 +222,12 @@ void TransferFunctionDisplay::drawGrid(juce::Graphics& g, juce::Rectangle<float>
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            dbValues = { 0.0f, -6.0f, -12.0f, -20.0f, -30.0f, -40.0f, -50.0f, -60.0f, -72.0f };
-            secondaryDbValues = { -3.0f, -9.0f, -15.0f, -24.0f, -36.0f, -48.0f, -66.0f };
+            dbValues = { 0.0f, -10.0f, -20.0f, -30.0f, -40.0f, -50.0f, -60.0f, -80.0f, -100.0f };
+            secondaryDbValues = { -5.0f, -15.0f, -25.0f, -35.0f, -45.0f, -55.0f, -70.0f, -90.0f };
             break;
         case ZoomLevel::Zoomed:
-            dbValues = { 0.0f, -6.0f, -12.0f, -18.0f, -24.0f, -30.0f, -36.0f, -42.0f, -48.0f };
-            secondaryDbValues = { -3.0f, -9.0f, -15.0f, -21.0f, -27.0f, -33.0f, -39.0f, -45.0f };
+            dbValues = { 0.0f, -6.0f, -12.0f, -18.0f, -24.0f, -30.0f, -36.0f, -42.0f, -50.0f };
+            secondaryDbValues = { -3.0f, -9.0f, -15.0f, -21.0f, -27.0f, -33.0f, -39.0f, -47.0f };
             break;
     }
     
@@ -288,11 +288,11 @@ void TransferFunctionDisplay::drawThresholdProjection(juce::Graphics& g, juce::R
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -342,11 +342,11 @@ void TransferFunctionDisplay::drawRangeProjection(juce::Graphics& g, juce::Recta
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -440,11 +440,11 @@ void TransferFunctionDisplay::drawKneeArea(juce::Graphics& g, juce::Rectangle<fl
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -511,11 +511,11 @@ void TransferFunctionDisplay::drawTransferCurve(juce::Graphics& g, juce::Rectang
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -579,7 +579,7 @@ float TransferFunctionDisplay::calculateKneeOutput(float inputDb, float threshol
 
 float TransferFunctionDisplay::calculateOutput(float inputDb)
 {
-    inputDb = juce::jlimit(-72.0f, 0.0f, inputDb);
+    inputDb = juce::jlimit(-100.0f, 0.0f, inputDb);
 
     float output;
 
@@ -655,11 +655,11 @@ juce::Point<float> TransferFunctionDisplay::dbToPixel(float inputDb, float outpu
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -680,11 +680,11 @@ juce::Point<float> TransferFunctionDisplay::pixelToDb(juce::Point<float> pixel, 
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -827,14 +827,14 @@ void TransferFunctionDisplay::updateWaveformData(const float* inputSamples, cons
         
         // Convertir a dB sin ruido artificial
         float inputDb = finalInputEnv > 0.0001f ?
-            20.0f * std::log10(finalInputEnv) : -80.0f;
+            20.0f * std::log10(finalInputEnv) : -100.0f;
         float processedDb = finalProcessedEnv > 0.0001f ?
-            20.0f * std::log10(finalProcessedEnv) : -80.0f;
+            20.0f * std::log10(finalProcessedEnv) : -100.0f;
         
-        // Limitar al rango del gráfico (-80 dB a 0 dB)
+        // Limitar al rango del gráfico (-100 dB a 0 dB)
         // Permitir llegar hasta 0 dB para consistencia con el rango visual
-        inputDb = juce::jlimit(-80.0f, 0.0f, inputDb);
-        processedDb = juce::jlimit(-80.0f, 0.0f, processedDb);
+        inputDb = juce::jlimit(-100.0f, 0.0f, inputDb);
+        processedDb = juce::jlimit(-100.0f, 0.0f, processedDb);
         
         inputWaveformBuffer[writeIndex] = inputDb;
         processedWaveformBuffer[writeIndex] = processedDb;
@@ -959,13 +959,13 @@ void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples
             
             // Convertir a dB sin ruido artificial
             float inputDb = finalInputEnv > 0.0001f ?
-                20.0f * std::log10(finalInputEnv) : -80.0f;
+                20.0f * std::log10(finalInputEnv) : -100.0f;
             float processedDb = finalProcessedEnv > 0.0001f ?
-                20.0f * std::log10(finalProcessedEnv) : -80.0f;
+                20.0f * std::log10(finalProcessedEnv) : -100.0f;
             
-            // Limitar al rango del gráfico (-80 dB a 0 dB)
-            inputDb = juce::jlimit(-80.0f, 0.0f, inputDb);
-            processedDb = juce::jlimit(-80.0f, 0.0f, processedDb);
+            // Limitar al rango del gráfico (-100 dB a 0 dB)
+            inputDb = juce::jlimit(-100.0f, 0.0f, inputDb);
+            processedDb = juce::jlimit(-100.0f, 0.0f, processedDb);
             
             inputWaveformBuffer[writeIndex] = inputDb;
             processedWaveformBuffer[writeIndex] = processedDb;
@@ -975,9 +975,9 @@ void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples
         // DIRECT CONVERSION - NO FILTERING (DEBUG)
         {
             float inputDb = maxInput > 0.0001f ?
-                20.0f * std::log10(maxInput) : -80.0f;
+                20.0f * std::log10(maxInput) : -100.0f;
             float processedDb = maxProcessed > 0.0001f ?
-                20.0f * std::log10(maxProcessed) : -80.0f;
+                20.0f * std::log10(maxProcessed) : -100.0f;
             
             // SIEMPRE escribir los datos originales primero
             inputWaveformBuffer[writeIndex] = inputDb;
@@ -1029,11 +1029,11 @@ void TransferFunctionDisplay::drawWaveformAreas(juce::Graphics& g, juce::Rectang
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -1341,11 +1341,11 @@ bool TransferFunctionDisplay::isNearThresholdLine(juce::Point<float> mousePos, j
     switch (currentZoom)
     {
         case ZoomLevel::Normal:
-            minDb = -72.0f;
+            minDb = -100.0f;
             maxDb = 0.0f;
             break;
         case ZoomLevel::Zoomed:
-            minDb = -48.0f;
+            minDb = -50.0f;
             maxDb = 0.0f;
             break;
     }
@@ -1644,9 +1644,9 @@ void TransferFunctionDisplay::drawDeltaGainReduction(juce::Graphics& g, juce::Re
     // Usar misma lógica que grMeter - siempre procesar (no solo con > 0.1f)
     // COPIA EXACTA de la implementación del grMeter (líneas 508-516 GradientMeter.h)
     
-    // Rango de trabajo: 0 dB (sin reducción) a -72 dB (máxima reducción) - IGUAL QUE grMeter
+    // Rango de trabajo: 0 dB (sin reducción) a -100 dB (máxima reducción) - IGUAL QUE grMeter
     const float minReduction = 0.0f;    // Sin reducción (sin área)
-    const float maxReduction = -72.0f;  // Máxima reducción (área completa)
+    const float maxReduction = -100.0f;  // Máxima reducción (área completa)
     
     // Mapeo correcto: valores más negativos = más área verde (IGUAL QUE grMeter)
     float fillRatio = juce::jmap(grValue, minReduction, maxReduction, 0.0f, 1.0f);
@@ -1655,7 +1655,7 @@ void TransferFunctionDisplay::drawDeltaGainReduction(juce::Graphics& g, juce::Re
     // Altura disponible para la visualización (desde la línea de referencia hacia abajo)
     float availableHeight = bounds.getHeight() - topOffset - 2.0f; // Margen inferior reducido para mayor altura
     
-    // Calcular altura de área (0 dB = sin área, -72 dB = área completa) - IGUAL QUE grMeter
+    // Calcular altura de área (0 dB = sin área, -100 dB = área completa) - IGUAL QUE grMeter
     float barHeight = availableHeight * fillRatio;
     
     // Siempre partir desde la línea de referencia hacia abajo
@@ -1722,9 +1722,9 @@ void TransferFunctionDisplay::drawDeltaGainReductionHistory(juce::Graphics& g, j
         float x = bounds.getX() + normalizedTime * bounds.getWidth();
         
         // Posición Y - mapear gain reduction usando misma lógica que área estática
-        // Usar rango fijo -72dB como el grMeter
+        // Usar rango fijo -100dB como el grMeter
         constexpr float minReduction = 0.0f;    // Sin reducción (parte superior)
-        constexpr float maxReduction = -72.0f;  // Máxima reducción (parte inferior)
+        constexpr float maxReduction = -100.0f;  // Máxima reducción (parte inferior)
         
         float fillRatio = juce::jmap(grDb, minReduction, maxReduction, 0.0f, 1.0f);
         fillRatio = juce::jlimit(0.0f, 1.0f, fillRatio);
