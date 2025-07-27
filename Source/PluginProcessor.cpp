@@ -784,7 +784,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
    auto hold = std::make_unique<juce::AudioParameterFloat>(
        juce::ParameterID("f_HOLD", versionHint),
        juce::CharPointer_UTF8("Hold"),
-       juce::NormalisableRange<float>(0.f, 500.f, 0.1f, 1.f),
+       juce::NormalisableRange<float>(0.f, 250.f, 0.1f, 1.f),
        0.f,
        juce::String(),
        juce::AudioParameterFloat::genericParameter,
@@ -820,7 +820,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
    auto range = std::make_unique<juce::AudioParameterFloat>(
        juce::ParameterID("h_RANGE", versionHint),
        juce::CharPointer_UTF8("Range"),
-       juce::NormalisableRange<float>(-60.f, 0.f, 0.1f, 1.f),
+       juce::NormalisableRange<float>(-100.f, 0.f, 0.1f, 1.f),
        -20.f,
        juce::String(),
        juce::AudioParameterFloat::genericParameter,

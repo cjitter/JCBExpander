@@ -3136,7 +3136,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima expansión\nVelocidad de respuesta del expansor\nRango: 0.1 a 250 ms | Por defecto: 1 ms");
         if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin expansión\nPermite valores extremos para efectos creativos\nRango: 0.1 a 1000 ms | Por defecto: 120 ms");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
-        if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel máximo de reducción de ganancia\nRango: -60 a 0 dB | Por defecto: -20 dB");
+        if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel máximo de reducción de ganancia\nRango: -100 a 0 dB | Por defecto: -20 dB");
         if (key == "delta") return JUCE_UTF8("DELTA: escucha la expansión aplicada\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
         if (key == "trim") return JUCE_UTF8("TRIM INPUT: ganancia de entrada al expansor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de salida manual\nAjusta el nivel final después del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
@@ -3179,7 +3179,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "attack") return "ATTACK: time to reach maximum expansion\nExpander response speed\nRange: 0.1 to 250 ms | Default: 1 ms";
         if (key == "release") return "RELEASE: time to return unexpanded\nAllows extreme values for creative effects\nRange: 0.1 to 1000 ms | Default: 120 ms";
         if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
-        if (key == "range") return "RANGE: lower limit of expansion\nMaximum level of gain reduction\nRange: -60 to 0 dB | Default: -20 dB";
+        if (key == "range") return "RANGE: lower limit of expansion\nMaximum level of gain reduction\nRange: -100 to 0 dB | Default: -20 dB";
         if (key == "delta") return "DELTA: listen to applied expansion\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
         if (key == "trim") return "TRIM INPUT: expander input gain\nAdjusts level before processing\nRange: -12 to +12 dB | Default: 0 dB";
         if (key == "makeup") return "MAKEUP: manual output gain\nAdjusts final level after processing\nRange: -12 to +12 dB | Default: 0 dB";
