@@ -434,8 +434,8 @@ void JCBExpanderAudioProcessorEditor::resized()
     // === LEFT SIDE KNOBS === (Between SC meters and transfer function)
     // Top row - THD, RANGE, RATIO, KNEE
     leftTopKnobs.thdSlider.setBounds(getScaledBounds(50, 48, 53, 53));
-    rightTopControls.rangeSlider.setBounds(getScaledBounds(100, 48, 53, 53));
-    leftTopKnobs.ratioSlider.setBounds(getScaledBounds(150, 48, 53, 53));
+    leftTopKnobs.ratioSlider.setBounds(getScaledBounds(100, 48, 53, 53));
+    rightTopControls.rangeSlider.setBounds(getScaledBounds(150, 48, 53, 53));
     leftTopKnobs.kneeSlider.setBounds(getScaledBounds(200, 48, 53, 53));
 
     // Bottom row - D/W, LA, CLIP (AGAIN está en fila superior)
