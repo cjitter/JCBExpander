@@ -909,7 +909,7 @@ void TransferFunctionDisplay::updateWaveformDataWithGR(const float* inputSamples
         //float envelopeReleaseTime = 0.3f;   // Release rápido para envolventes (comportamiento original)
         
         // Factor de suavizado por defecto para gain reduction (valor medio)
-        float grSmoothingFactor = 0.7f;  // Equivalente a ~100ms de release
+        // grSmoothingFactor = 0.7f;  // Equivalente a ~100ms de release - REMOVIDO (no usado)
         
         // TEMPORAL DEBUG - BYPASS ENVELOPE FILTERING
         /*

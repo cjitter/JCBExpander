@@ -62,7 +62,7 @@ Details of the GPLv3 license can be found at: https://www.gnu.org/licenses/gpl-3
 
 // global noise generator
 Noise noise;
-static const int GENLIB_LOOPCOUNT_BAIL = 100000;
+//static const int GENLIB_LOOPCOUNT_BAIL = 100000;
 
 
 // The State struct contains all the state and procedures for the gendsp kernel
@@ -463,7 +463,7 @@ typedef struct State {
 			t_sample lpfHistory14Next = fixdenorm(m_lpfHistory_27);
 			t_sample lpfHistory15Next = fixdenorm(lpfStage3FilteredSignal);
 			t_sample lpfHistory16Next = fixdenorm(lpfStage4FilteredSignal);
-			if ((lpfOrderDiscrete == ((int)0))) {
+			if (lpfOrderDiscrete == ((int)0)) {
 				lpfFinalSignal = lpfFilteredSignal;
 				
 			} else {
@@ -512,7 +512,7 @@ typedef struct State {
 			t_sample hpfHistory14Next = fixdenorm(m_hpfHistory_20);
 			t_sample hpfHistory15Next = fixdenorm(hpfStage3FilteredSignal);
 			t_sample hpfHistory16Next = fixdenorm(hpfStage4FilteredSignal);
-			if ((hpfOrderDiscrete == ((int)0))) {
+			if (hpfOrderDiscrete == ((int)0)) {
 				hpfFinalSignal = hpfFilteredSignal;
 				
 			} else {
