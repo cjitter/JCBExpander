@@ -27,7 +27,6 @@
 #include "Components/UI/CustomComboBox.h"
 #include "Components/Windows/CustomDialog.h"
 #include "Components/Windows/UndoableButtonAttachment.h"
-#include "Components/Windows/UndoableMultiStateButtonAttachment.h"
 #include "Components/Windows/CodeWindow.h"
 
 // Forward declaration para CreditsOverlay (usado en std::unique_ptr<CreditsOverlay> creditsOverlay)
@@ -263,8 +262,8 @@ private:
         std::unique_ptr<UndoableButtonAttachment> scAttachment;
         std::unique_ptr<UndoableButtonAttachment> keyAttachment;
         std::unique_ptr<UndoableButtonAttachment> soloScAttachment;
-        std::unique_ptr<UndoableMultiStateButtonAttachment> hpfOrderAttachment;
-        std::unique_ptr<UndoableMultiStateButtonAttachment> lpfOrderAttachment;
+        std::unique_ptr<UndoableButtonAttachment> hpfOrderAttachment;
+        std::unique_ptr<UndoableButtonAttachment> lpfOrderAttachment;
     } sidechainControls;
     
     //==========================================================================

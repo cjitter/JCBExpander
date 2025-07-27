@@ -64,9 +64,9 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     // Verificar si el host es Logic Pro
     juce::PluginHostType hostInfo;
     if (hostInfo.isLogic()) {
-        titleText = "v0.9.992 beta";  // Solo versión para Logic Pro
+        titleText = "v0.9.1 beta";  // Solo versión para Logic Pro
     } else {
-        titleText = "JCBExpander v0.9.992 beta";  // Nombre completo para otros DAWs
+        titleText = "JCBExpander v0.9.1 beta";  // Nombre completo para otros DAWs
     }
     
     titleLink.setButtonText(titleText);
@@ -1626,13 +1626,14 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     sidechainControls.hpfOrderButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    sidechainControls.hpfOrderButton.setClickingTogglesState(true);
     sidechainControls.hpfOrderButton.setEnabled(true);   // Enable BEFORE creating attachment
     sidechainControls.hpfOrderButton.setAlpha(1.0f);     // Make visible BEFORE creating attachment
     addAndMakeVisible(sidechainControls.hpfOrderButton);
-    // Crear UndoableMultiStateButtonAttachment para HPF order
+    // Crear UndoableButtonAttachment para HPF order
     if (auto* param = processor.apvts.getParameter("j_HPFORDER"))
     {
-        sidechainControls.hpfOrderAttachment = std::make_unique<UndoableMultiStateButtonAttachment>(
+        sidechainControls.hpfOrderAttachment = std::make_unique<UndoableButtonAttachment>(
             *param, sidechainControls.hpfOrderButton, &undoManager);
         sidechainControls.hpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
     }
@@ -1643,13 +1644,14 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     sidechainControls.lpfOrderButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    sidechainControls.lpfOrderButton.setClickingTogglesState(true);
     sidechainControls.lpfOrderButton.setEnabled(true);  // Enable BEFORE creating attachment
     sidechainControls.lpfOrderButton.setAlpha(1.0f);  // Make visible BEFORE creating attachment
     addAndMakeVisible(sidechainControls.lpfOrderButton);
-    // Crear UndoableMultiStateButtonAttachment para LPF order
+    // Crear UndoableButtonAttachment para LPF order
     if (auto* param = processor.apvts.getParameter("k_LPFORDER"))
     {
-        sidechainControls.lpfOrderAttachment = std::make_unique<UndoableMultiStateButtonAttachment>(
+        sidechainControls.lpfOrderAttachment = std::make_unique<UndoableButtonAttachment>(
             *param, sidechainControls.lpfOrderButton, &undoManager);
         sidechainControls.lpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
     }
@@ -3091,25 +3093,26 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     if (currentLanguage == TooltipLanguage::Spanish)
     {
         // Spanish tooltips
-        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.992 beta\nPlugin educativo open source\nClick para créditos");
-        if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la compresión\nSeñales sobre este nivel se comprimen\nRango: -60 a 0 dB | Por defecto: -18 dB");
-        if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de compresión aplicada\nRelación entrada/salida sobre el threshold\nRango: 1:1 a 20:1 | Por defecto: 4:1");
-        if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 0 a 30 dB | Por defecto: 0 dB");
+        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.1 beta\nPlugin educativo open source\nClick para créditos");
+        if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la expansión\nSeñales bajo este nivel se expanden\nRango: -60 a 0 dB | Por defecto: -18 dB");
+        if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 0.95:1 a 40:1 | Por defecto: 4:1");
+        if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 5 dB");
         if (key == "drywet") return JUCE_UTF8("DRY/WET: mezcla final entre señal original y procesada\nControl de balance entrada/salida\nRango: 0 a 100% | Por defecto: 100%");
         if (key == "lookahead") return JUCE_UTF8("LOOK AHEAD: retardo para evitar overshooting\nReporta latencia al host\nRango: 0 a 10 ms | Por defecto: 0 ms");
         if (key == "clip") return JUCE_UTF8("SOFT CLIP: limitador suave de salida\nPreviene saturación con distorsión armónica\nRango: 0/OFF a 1 | Por defecto: 0/OFF");
         if (key == "react") return JUCE_UTF8("REACT: respuesta del detector a transientes.\nValores bajos: suave | Valores altos: agresivo.\nRango: 0 a 100% | Por defecto: 0%");
-        if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima compresión\nVelocidad de respuesta del compresor\nRango: 0.1 a 100 ms | Por defecto: 5 ms");
-        if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin compresión\nPermite valores extremos que distorsionan\nRango: 0.1 a 1000 ms | Por defecto: 30 ms");
+        if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima expansión\nVelocidad de respuesta del expansor\nRango: 0.1 a 250 ms | Por defecto: 5 ms");
+        if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin expansión\nPermite valores extremos para efectos creativos\nRango: 0.1 a 1000 ms | Por defecto: 30 ms");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
-        if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel mínimo de reducción de ganancia\nRango: -60 a 0 dB | Por defecto: -20 dB");
-        if (key == "delta") return JUCE_UTF8("DELTA: escucha la reducción aplicada\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "trim") return JUCE_UTF8("TRIM INPUT: ganancia de entrada al compresor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
-        if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de compensación manual\nFunciona junto al Auto Gain\nRango: -12 a +12 dB | Por defecto: 0 dB");
-        if (key == "sc") return JUCE_UTF8("SC: activa los filtros del sidechain interno.\nPermite filtrar la señal, tanto interna como externa, que controla el compresor.\nValor por defecto: OFF");
-        if (key == "extkey") return JUCE_UTF8("EXTERNAL KEY: activa sidechain externo\nUsa entrada auxiliar para controlar compresión\nRango: OFF/ON | Por defecto: OFF");
+        if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel máximo de reducción de ganancia\nRango: -60 a 0 dB | Por defecto: -20 dB");
+        if (key == "delta") return JUCE_UTF8("DELTA: escucha la expansión aplicada\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
+        if (key == "trim") return JUCE_UTF8("TRIM INPUT: ganancia de entrada al expansor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
+        if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de salida manual\nAjusta el nivel final después del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
+        if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
+        if (key == "sc") return JUCE_UTF8("SC: activa los filtros del sidechain interno.\nPermite filtrar la señal, tanto interna como externa, que controla el expansor.\nValor por defecto: OFF");
+        if (key == "extkey") return JUCE_UTF8("EXTERNAL KEY: activa sidechain externo\nUsa entrada auxiliar para controlar expansión\nRango: OFF/ON | Por defecto: OFF");
         if (key == "solosc") return JUCE_UTF8("SOLO SC: escucha filtros sidechain int/ext\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "hpf") return JUCE_UTF8("HPF: filtro pasa altos del sidechain\nFiltra frecuencias del detector de compresión\nRango: 20 a 20k Hz | Por defecto: 20 Hz");
+        if (key == "hpf") return JUCE_UTF8("HPF: filtro pasa altos del sidechain\nFiltra frecuencias del detector de expansión\nRango: 20 a 20k Hz | Por defecto: 20 Hz");
         if (key == "lpf") return JUCE_UTF8("LPF: filtro pasa bajos del sidechain\nElimina frecuencias agudas del detector\nRango: 20 Hz a 20 kHz | Por defecto: 20 kHz");
         if (key == "save") return JUCE_UTF8("GUARDAR: guarda o sobrescribe preset\nGuarda nuevo o actualiza el preset actual");
         if (key == "saveas") return JUCE_UTF8("SAVE AS: guarda como nuevo preset\nCrea un nuevo archivo de preset con los valores actuales\nPermite crear presets personalizados");
@@ -3120,10 +3123,10 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "redo") return JUCE_UTF8("REHACER: aplica el cambio deshecho\nRehace modificación manual previamente revertida\nHistorial: hasta 20 pasos");
         if (key == "resetgui") return JUCE_UTF8("SIZE: cicla entre tamaños de ventana\nActual → Máximo → Mínimo → Actual\nAjuste rápido del tamaño del plugin");
         if (key == "bypass") return JUCE_UTF8("BYPASS: desactiva el procesamiento del plugin\nParámetro global, no automatizable. Transición suave\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "graphics") return JUCE_UTF8("GRAPHICS: muestra envolventes en tiempo real\nVisualiza env entrada/salida e histograma reducción\nDesactivar mejora rendimiento en CPUs lentas");
+        if (key == "graphics") return JUCE_UTF8("GRAPHICS: muestra envolventes en tiempo real\nVisualiza env entrada/salida e histograma expansión\nDesactivar mejora rendimiento en CPUs lentas");
         if (key == "zoom") return JUCE_UTF8("ZOOM: cicla entre vista normal y ampliada\nNormal: -72 a 0dB | x2: -48 a 0dB");
         if (key == "diagram") return JUCE_UTF8("DIAGRAM: muestra diagrama de bloques del procesador\nDespliega menú con código GenExpr por bloque para copiar");
-        if (key == "transfer") return JUCE_UTF8("GRÁFICA: función de transferencia del compresor\nArrastra para modificar THD, Ratio y Knee\nClick derecho para opciones adicionales");
+        if (key == "transfer") return JUCE_UTF8("GRÁFICA: función de transferencia del expansor\nArrastra para modificar THD, Ratio y Knee\nClick derecho para opciones adicionales");
         if (key == "tooltiptoggle") return JUCE_UTF8("TOOLTIP: muestra/oculta los tooltips de ayuda\nActiva o desactiva las ventanas de ayuda emergentes");
         if (key == "tooltiplang") return JUCE_UTF8("IDIOMA: cambia entre español e inglés.\nAlterna el idioma de los tooltips.");
         if (key == "sctrim") return JUCE_UTF8("SC TRIM: ganancia entrada sidechain -12 a +12 dB\nAjusta nivel del sidechain externo\nPor defecto: 0 dB, se activa con EXT KEY");
@@ -3133,25 +3136,26 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     else
     {
         // English tooltips
-        if (key == "title") return "JCBExpander: audio expander v0.9.992 beta\nOpen source educational plugin\nClick for credits";
-        if (key == "thd") return "THRESHOLD: level where compression begins\nSignals above this level are compressed\nRange: -60 to 0 dB | Default: -18 dB";
-        if (key == "ratio") return "RATIO: amount of compression applied\nInput/output relationship above threshold\nRange: 1:1 to 20:1 | Default: 4:1";
-        if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 0 to 30 dB | Default: 0 dB";
+        if (key == "title") return "JCBExpander: audio expander v0.9.1 beta\nOpen source educational plugin\nClick for credits";
+        if (key == "thd") return "THRESHOLD: level where expansion begins\nSignals below this level are expanded\nRange: -60 to 0 dB | Default: -18 dB";
+        if (key == "ratio") return "RATIO: amount of expansion applied\nInput/output relationship below threshold\nRange: 0.95:1 to 40:1 | Default: 4:1";
+        if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 1 to 20 dB | Default: 5 dB";
         if (key == "drywet") return "DRY/WET: final mix between original and processed signal\nInput/output balance control\nRange: 0 to 100% | Default: 100%";
         if (key == "lookahead") return "LOOK AHEAD: delay to prevent overshooting\nReports latency to host\nRange: 0 to 10 ms | Default: 0 ms";
         if (key == "clip") return "SOFT CLIP: soft output limiter\nPrevents clipping with harmonic distortion\nRange: 0/OFF to 1 | Default: 0/OFF";
         if (key == "react") return "REACT: detector response to transients.\nLow values: smooth | High values: aggressive.\nRange: 0 to 100% | Default: 0%";
-        if (key == "attack") return "ATTACK: time to reach maximum compression\nCompressor response speed\nRange: 0.1 to 100 ms | Default: 5 ms";
-        if (key == "release") return "RELEASE: time to return uncompressed\nAllows extreme values for creative distortion\nRange: 0.1 to 1000 ms | Default: 30 ms";
+        if (key == "attack") return "ATTACK: time to reach maximum expansion\nExpander response speed\nRange: 0.1 to 250 ms | Default: 5 ms";
+        if (key == "release") return "RELEASE: time to return unexpanded\nAllows extreme values for creative effects\nRange: 0.1 to 1000 ms | Default: 30 ms";
         if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
-        if (key == "range") return "RANGE: lower limit of expansion\nMinimum level of gain reduction\nRange: -60 to 0 dB | Default: -20 dB";
-        if (key == "delta") return "DELTA: listen to applied reduction\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
-        if (key == "trim") return "TRIM INPUT: compressor input gain\nAdjusts level before processing\nRange: -12 to +12 dB | Default: 0 dB";
-        if (key == "makeup") return "MAKEUP: manual compensation gain\nWorks together with Auto Gain\nRange: -12 to +12 dB | Default: 0 dB";
-        if (key == "sc") return "SC: activates internal sidechain filters.\nAllows filtering the signal, both internal and external, that controls the compressor.\nDefault: OFF";
-        if (key == "extkey") return "EXTERNAL KEY: enables external sidechain\nUses auxiliary input to control compression\nRange: OFF/ON | Default: OFF";
+        if (key == "range") return "RANGE: lower limit of expansion\nMaximum level of gain reduction\nRange: -60 to 0 dB | Default: -20 dB";
+        if (key == "delta") return "DELTA: listen to applied expansion\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
+        if (key == "trim") return "TRIM INPUT: expander input gain\nAdjusts level before processing\nRange: -12 to +12 dB | Default: 0 dB";
+        if (key == "makeup") return "MAKEUP: manual output gain\nAdjusts final level after processing\nRange: -12 to +12 dB | Default: 0 dB";
+        if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
+        if (key == "sc") return "SC: activates internal sidechain filters.\nAllows filtering the signal, both internal and external, that controls the expander.\nDefault: OFF";
+        if (key == "extkey") return "EXTERNAL KEY: enables external sidechain\nUses auxiliary input to control expansion\nRange: OFF/ON | Default: OFF";
         if (key == "solosc") return "SOLO SC: listen to int/ext sidechain filters\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
-        if (key == "hpf") return "HPF: sidechain high-pass filter\nFilters frequencies from compression detector\nRange: 20 to 20k Hz | Default: 20 Hz";
+        if (key == "hpf") return "HPF: sidechain high-pass filter\nFilters frequencies from expansion detector\nRange: 20 to 20k Hz | Default: 20 Hz";
         if (key == "lpf") return "LPF: sidechain low-pass filter.\nRemoves treble frequencies from detector.\nRange: 20 Hz to 20 kHz | Default: 20 kHz";
         if (key == "save") return "SAVE: save or overwrite preset\nSave new or update current preset";
         if (key == "saveas") return "SAVE AS: save as new preset.\nCreates new preset file with current values.\nAllows creating custom presets";
@@ -3162,19 +3166,20 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "redo") return "REDO: reapply undone change\nRedo manually made modification previously reverted\nHistory: up to 20 steps";
         if (key == "resetgui") return JUCE_UTF8("SIZE: cycles through window sizes\nCurrent → Maximum → Minimum → Current\nQuick plugin size adjustment");
         if (key == "bypass") return "BYPASS: disables plugin processing\nGlobal parameter, non-automatable. Smooth transition\nRange: OFF/ON | Default: OFF";
-        if (key == "graphics") return "GRAPHICS: shows real-time envelopes\nDisplays input/output env and reduction histogram\nDisable to improve performance on slow CPUs";
+        if (key == "graphics") return "GRAPHICS: shows real-time envelopes\nDisplays input/output env and expansion histogram\nDisable to improve performance on slow CPUs";
         if (key == "zoom") return "ZOOM: cycles between normal and zoomed view\nNormal: -72 to 0dB | x2: -48 to 0dB";
         if (key == "diagram") return "DIAGRAM: shows processor block diagram\nDisplays menu with GenExpr code per block for copying";
-        if (key == "transfer") return "GRAPH: compressor transfer function\nDrag to modify THD, Ratio and Knee\nRight click for additional options";
+        if (key == "transfer") return "GRAPH: expander transfer function\nDrag to modify THD, Ratio and Knee\nRight click for additional options";
         if (key == "tooltiptoggle") return "TOOLTIP: show/hide help tooltips.\nEnables or disables popup help windows.";
         if (key == "tooltiplang") return "LANGUAGE: switch between Spanish and English.\nToggles tooltip language.";
         if (key == "sctrim") return "SC TRIM: sidechain input gain -12 to +12 dB\nAdjusts external sidechain level\nDefault: 0 dB, activated with EXT KEY";
         if (key == "link") return "STEREO LINKED: always active.\nPlugin only works in stereo linked mode.\nBoth channels are always linked";
         if (key == "smooth") return "SMOOTH: extra envelope detector smoothing\nControls smoothing amount applied to detection\nRange: 0 (RAW) to 1 (SMOOTH) | Default: 0";
     }
-    
+
     return "";
 }
+
 
 //==============================================================================
 // HELPERS DE UI

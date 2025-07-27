@@ -134,7 +134,7 @@ juce_add_binary_data(JCBExpander_BinaryData
         Assets/code/GainCalc.txt
         Assets/code/Output.txt
         # Presets de fábrica
-        #Assets/FactoryPresets/Gentle_Compression.preset
+        Assets/FactoryPresets/LoopRedux.preset
         #Assets/FactoryPresets/Vocal_Warmth.preset
         #Assets/FactoryPresets/Drum_Bus_Glue.preset
         #Assets/FactoryPresets/Master_Bus.preset
