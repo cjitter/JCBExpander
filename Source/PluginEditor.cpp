@@ -179,7 +179,7 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     bool initialDeltaState = processor.apvts.getRawParameterValue("v_DELTA")->load() > 0.5f;
     parameterButtons.deltaButton.setButtonText("DELTA");  // Texto siempre igual
     transferDisplay.setEnvelopeVisible(!initialDeltaState);  // Ocultar envolventes si DELTA está ON
-    transferDisplay.setVisible(!initialDeltaState);  // Ocultar todo el componente si DELTA está ON
+    // ELIMINADO: transferDisplay.setVisible(!initialDeltaState) - Mantener visible para mostrar histograma
     if (initialDeltaState) {
         // Configurar medidores en modo delta
         inputMeterL.setDeltaMode(true);
@@ -618,8 +618,9 @@ void JCBExpanderAudioProcessorEditor::timerCallback()
     // Actualizar datos de waveform y obtener gain reduction para el medidor
     if (!isBypassed && !isProcessingInactive)
     {
-        // Obtener datos de waveform si las envolventes están visibles
-        if (transferDisplay.isEnvelopeVisible())
+        // Obtener datos de waveform si las envolventes están visibles O si estamos en modo DELTA
+        bool deltaActive = parameterButtons.deltaButton.getToggleState();
+        if (transferDisplay.isEnvelopeVisible() || deltaActive)
         {
             std::vector<float> inputSamples, processedSamples, gainReductionSamples;
             processor.getWaveformDataWithGR(inputSamples, processedSamples, gainReductionSamples);
@@ -650,6 +651,12 @@ void JCBExpanderAudioProcessorEditor::timerCallback()
                     
                     // Enviar solo waveforms (el parámetro GR se ignora ahora)
                     transferDisplay.updateWaveformDataWithGR(&inputSamples[0], &processedSamples[0], &gainReductionSamples[0], 1);
+                    
+                    // NUEVO: Enviar valor actual de gain reduction para visualización en DELTA
+                    float currentGR = processor.getGainReductionValue(0);
+                    transferDisplay.setCurrentGainReduction(currentGR);
+                    
+                    // ELIMINADO: Ya no necesitamos parámetro RANGE - usar rango fijo como grMeter
                     
                     // Forzar repintado para mostrar envolvente actualizada
                     transferDisplay.repaint();
@@ -1007,11 +1014,13 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
             
             // Activar modo DELTA en display
             transferDisplay.setDeltaMode(true);
-            transferDisplay.setVisible(false);  // Ocultar transfer function cuando DELTA ON
+            transferDisplay.setEnvelopeVisible(false);  // Ocultar envolventes cuando DELTA ON
+            // ELIMINADO: setVisible(false) - Mantener visible para mostrar histograma
         } else {
             // Desactivar modo DELTA en display
             transferDisplay.setDeltaMode(false);
-            transferDisplay.setVisible(true);   // Mostrar transfer function cuando DELTA OFF
+            transferDisplay.setEnvelopeVisible(true);   // Mostrar envolventes cuando DELTA OFF
+            // ELIMINADO: setVisible(true) - Ya está visible
         }
         
         updateButtonStates();

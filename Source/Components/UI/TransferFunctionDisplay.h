@@ -80,6 +80,15 @@ public:
     void updateWaveformData(const float* inputSamples, const float* processedSamples, int numSamples);
     void updateWaveformDataWithGR(const float* inputSamples, const float* processedSamples, const float* gainReductionSamples, int numSamples);
     
+    // NUEVO: Método para establecer valor actual de gain reduction en tiempo real
+    void setCurrentGainReduction(float grDb) noexcept { 
+        currentGainReduction = grDb; 
+        updateDeltaHistory(grDb);  // Actualizar histograma DELTA
+    }
+    
+    // NUEVO: Método para establecer el parámetro RANGE para escalado dinámico
+    void setRangeParameter(float rangeDb) noexcept { currentRangeParameter = rangeDb; }
+    
     //==========================================================================
     // CONTROL DE VISUALIZACIÓN
     //==========================================================================
@@ -217,6 +226,11 @@ private:
     void drawKneeArea(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawWaveformAreas(juce::Graphics& g, juce::Rectangle<float> bounds);
     void drawGainReductionHistory(juce::Graphics& g, juce::Rectangle<float> bounds);
+    void drawDeltaGainReduction(juce::Graphics& g, juce::Rectangle<float> bounds);  // NUEVO: Visualización específica para DELTA
+    void drawDeltaGainReductionHistory(juce::Graphics& g, juce::Rectangle<float> bounds);  // NUEVO: Histograma temporal específico para DELTA
+    
+    // Métodos de manejo del buffer DELTA
+    void updateDeltaHistory(float grDb) noexcept;  // Actualiza buffer temporal DELTA
 
     //==========================================================================
     // FUNCIONES MATEMÁTICAS DEL EXPANSOR
@@ -243,6 +257,17 @@ private:
     
     ZoomLevel currentZoom = ZoomLevel::Normal;  // Por defecto modo normal
     std::atomic<bool> isLogicStopped{false};  // Estado de Logic Audio stopped
+    
+    // NUEVO: Valor actual de gain reduction para visualización en tiempo real
+    std::atomic<float> currentGainReduction{0.0f};
+    
+    // NUEVO: Parámetro RANGE actual para escalado dinámico
+    std::atomic<float> currentRangeParameter{-40.0f}; // Valor por defecto
+    
+    // NUEVO: Buffer temporal para histograma DELTA específico (Thread-Safe)
+    static constexpr int deltaHistorySize = 120;  // Mismo que displayPoints
+    std::atomic<float> deltaGrHistory[deltaHistorySize]; // Buffer circular thread-safe
+    std::atomic<int> deltaHistoryIndex{0};       // Índice circular thread-safe
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransferFunctionDisplay)
 };
