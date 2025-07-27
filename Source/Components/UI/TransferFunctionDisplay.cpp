@@ -1149,17 +1149,17 @@ void TransferFunctionDisplay::drawWaveformAreas(juce::Graphics& g, juce::Rectang
     // CORRECCIÓN: inputAreaPath es realmente para entrada, processedAreaPath para salida
     if (!inputAreaPath.isEmpty())
     {
-        // Gradiente vertical para ENTRADA - MORADO MÁS VISIBLE
+        // Gradiente vertical para ENTRADA - MORADO GRISÁCEO MÁS SUTIL
         juce::ColourGradient inputGradient(
-            juce::Colour(0x9C, 0x27, 0xB0).withAlpha(0.6f * currentFadeOutFactor), bounds.getCentreX(), bounds.getY(),
-            juce::Colour(0x7B, 0x1F, 0xA2).withAlpha(0.4f * currentFadeOutFactor), bounds.getCentreX(), bounds.getBottom(),
+            juce::Colour(0x80, 0x70, 0x85).withAlpha(0.6f * currentFadeOutFactor), bounds.getCentreX(), bounds.getY(),
+            juce::Colour(0x65, 0x58, 0x6A).withAlpha(0.4f * currentFadeOutFactor), bounds.getCentreX(), bounds.getBottom(),
             false
         );
         g.setGradientFill(inputGradient);
         g.fillPath(inputAreaPath);
         
-        // Línea superior morada para ENTRADA - más visible
-        g.setColour(juce::Colour(0x9C, 0x27, 0xB0).withAlpha(0.8f * currentFadeOutFactor));
+        // Línea superior morada grisácea para ENTRADA - más sutil
+        g.setColour(juce::Colour(0x80, 0x70, 0x85).withAlpha(0.8f * currentFadeOutFactor));
         juce::Path inputLine;
         if (!inputPoints.empty())
         {

@@ -95,7 +95,8 @@ public:
             // DETECTOR (Verde) - #66FF66
             else if (name == "detect" || id == "detect" ||
                      name == "attack" || id == "attack" || name == "release" || id == "release" ||
-                     name == "react" || id == "react" || name == "smo" || id == "smo") {
+                     name == "react" || id == "react" || name == "smo" || id == "smo" ||
+                     name == "hold" || id == "hold") {
                 accentColour = juce::Colour(0xFF66FF66);
             }
             // AR (Naranja) - #FFB366
@@ -104,7 +105,7 @@ public:
             }
             // COMPRESSOR CORE (Púrpura) - #B366FF (más vivo)
             else if (name == "thd" || id == "thd" || name == "ratio" || id == "ratio" || 
-                     name == "knee" || id == "knee") {
+                     name == "knee" || id == "knee" || name == "range" || id == "range") {
                 accentColour = juce::Colour(0xFFB366FF);
             }
             // AUTO-MAKEUP (Rojo) - #FF6666
