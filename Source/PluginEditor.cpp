@@ -1618,7 +1618,6 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
     // Attachment de SOLO SC - excluido del undo por consistencia con DELTA y BYPASS (sin UndoManager)
     sidechainControls.soloScAttachment = std::make_unique<UndoableButtonAttachment>(
         *processor.apvts.getParameter("m_SOLOSC"), sidechainControls.soloScButton, nullptr);
-    sidechainControls.soloScAttachment->onParameterChange = [this]() { handleParameterChange(); };
     sidechainControls.soloScButton.setTooltip(JUCE_UTF8("SOLO SC: escucha solo la señal del sidechain.\nPermite monitorear qué está controlando el compresor.\nSe procesa en dual mono"));
     
     // Botón de orden HPF - control de orden del filtro
@@ -2154,7 +2153,6 @@ void JCBExpanderAudioProcessorEditor::setupParameterButtons()
     // Attachment de DELTA - excluido del undo (sin UndoManager) y no automatizable
     parameterButtons.deltaAttachment = std::make_unique<UndoableButtonAttachment>(
         *processor.apvts.getParameter("v_DELTA"), parameterButtons.deltaButton, nullptr);
-    parameterButtons.deltaAttachment->onParameterChange = [this]() { handleParameterChange(); };
     parameterButtons.deltaButton.setTooltip(JUCE_UTF8("DELTA: escucha solo la diferencia.\nReproducir la señal procesada menos la original.\nÚtil para escuchar exactamente qué está cambiando"));
     
     // Botón BYPASS - movido desde utilityButtons
@@ -2168,7 +2166,6 @@ void JCBExpanderAudioProcessorEditor::setupParameterButtons()
     // Attachment de BYPASS - excluido del undo (sin UndoManager) y no automatizable
     parameterButtons.bypassAttachment = std::make_unique<UndoableButtonAttachment>(
         *processor.apvts.getParameter("p_BYPASS"), parameterButtons.bypassButton, nullptr);
-    parameterButtons.bypassAttachment->onParameterChange = [this]() { handleParameterChange(); };
     parameterButtons.bypassButton.setTooltip(JUCE_UTF8("BYPASS: desactiva el procesamiento del plugin.\nEs independiente del bypass del DAW y está suavizado.\nValor por defecto: OFF"));
 }
 
