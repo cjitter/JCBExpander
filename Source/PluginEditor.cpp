@@ -1071,6 +1071,17 @@ void JCBExpanderAudioProcessorEditor::handleParameterChange()
         }
         // Si ya tiene un asterisco, no hacer nada
     }
+    
+    // Actualizar texto del botón EXT KEY dinámicamente basándose en el estado del parámetro "r_KEY"
+    if (auto* keyParam = processor.apvts.getRawParameterValue("r_KEY")) {
+        bool isExtKeyActive = keyParam->load() > 0.5f;
+        if (isExtKeyActive) {
+            sidechainControls.keyButton.setButtonText("SC EXT");
+        } else {
+            sidechainControls.keyButton.setButtonText("SC INT");
+        }
+        // Nota: El tooltip se actualiza automáticamente via getTooltipText("extkey") en updateAllTooltips()
+    }
 }
 
 
@@ -1606,7 +1617,8 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
     sidechainControls.keyAttachment = std::make_unique<UndoableButtonAttachment>(
         *processor.apvts.getParameter("r_KEY"), sidechainControls.keyButton, &undoManager);
     sidechainControls.keyAttachment->onParameterChange = [this]() { handleParameterChange(); };
-    sidechainControls.keyButton.setTooltip(JUCE_UTF8("EXT KEY: usa entrada externa como sidechain.\nCanales 3-4 controlan la compresión de canales 1-2.\nValor por defecto: OFF"));
+    // Tooltip se establece via updateAllTooltips() usando getTooltipText("extkey")
+    sidechainControls.keyButton.setTooltip("");
     
     // Botón Solo SC - estilizado como ExpansorGate con acento cálido, SIEMPRE HABILITADO
     sidechainControls.soloScButton.setClickingTogglesState(true);
@@ -1662,6 +1674,17 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
         sidechainControls.lpfOrderAttachment->onParameterChange = [this]() { handleParameterChange(); };
     }
     sidechainControls.lpfOrderButton.setTooltip(JUCE_UTF8("LPF ORDER: orden del filtro paso bajo.\n12 dB/oct, 24 dB/oct o 48 dB/oct.\nClick para ciclar entre opciones.\nValor por defecto: 12 dB/oct"));
+    
+    // Actualizar el texto inicial del botón EXT KEY basándose en el estado actual del parámetro
+    if (auto* keyParam = processor.apvts.getRawParameterValue("r_KEY")) {
+        bool isExtKeyActive = keyParam->load() > 0.5f;
+        if (isExtKeyActive) {
+            sidechainControls.keyButton.setButtonText("SC EXT");
+        } else {
+            sidechainControls.keyButton.setButtonText("SC INT");
+        }
+        // Nota: El tooltip se establece via updateAllTooltips() usando getTooltipText("extkey")
+    }
 }
 
 void JCBExpanderAudioProcessorEditor::setupPresetArea()
@@ -3119,7 +3142,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de salida manual\nAjusta el nivel final después del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
         if (key == "sc") return JUCE_UTF8("FILTERS: activa los filtros del sidechain.\nPermite filtrar la señal, tanto interna como externa, que controla el expansor.\nValor por defecto: OFF");
-        if (key == "extkey") return JUCE_UTF8("EXTERNAL KEY: activa sidechain externo\nUsa entrada auxiliar para controlar expansión\nRango: OFF/ON | Por defecto: OFF");
+        if (key == "extkey") return JUCE_UTF8("SIDECHAIN: selecciona cadena lateral interna o externa.\nINT usa la propia señal, EXT usa entradas auxiliares.\nValor por defecto: INT");
         if (key == "solosc") return JUCE_UTF8("SOLO SC: escucha filtros sidechain int/ext\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
         if (key == "hpf") return JUCE_UTF8("HPF: filtro pasa altos del sidechain\nFiltra frecuencias del detector de expansión\nRango: 20 a 20k Hz | Por defecto: 20 Hz");
         if (key == "lpf") return JUCE_UTF8("LPF: filtro pasa bajos del sidechain\nElimina frecuencias agudas del detector\nRango: 20 Hz a 20 kHz | Por defecto: 20 kHz");
@@ -3162,7 +3185,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "makeup") return "MAKEUP: manual output gain\nAdjusts final level after processing\nRange: -12 to +12 dB | Default: 0 dB";
         if (key == "hold") return "HOLD: retention time before release\nMaintains expansion for a fixed period\nRange: 0 to 500 ms | Default: 0 ms";
         if (key == "sc") return "FILTERS: activates sidechain filters.\nAllows filtering the signal, both internal and external, that controls the expander.\nDefault: OFF";
-        if (key == "extkey") return "EXTERNAL KEY: enables external sidechain\nUses auxiliary input to control expansion\nRange: OFF/ON | Default: OFF";
+        if (key == "extkey") return "SIDECHAIN: selects internal or external sidechain.\nINT uses input signal, EXT uses auxiliary inputs.\nDefault: INT";
         if (key == "solosc") return "SOLO SC: listen to int/ext sidechain filters\nGlobal parameter, non-automatable\nRange: OFF/ON | Default: OFF";
         if (key == "hpf") return "HPF: sidechain high-pass filter\nFilters frequencies from expansion detector\nRange: 20 to 20k Hz | Default: 20 Hz";
         if (key == "lpf") return "LPF: sidechain low-pass filter.\nRemoves treble frequencies from detector.\nRange: 20 Hz to 20 kHz | Default: 20 kHz";
