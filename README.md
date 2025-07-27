@@ -67,12 +67,12 @@ cmake --build build-release   # Para Release
 - **Modo de detección** sharp con sliding RMS de ventana variable y control adicional de suavizado.
 - **Ajuste interpolado independiente de reacción pico/RMS**.
 - **Expansión con softknee** de segundo orden con transición gradual (1:1 a 6:1).
-- **Controles estándar**: threshold (-60 a 0 dB), range (-60 a 0 dB), ratio (1:1 a 40:1), knee (1 a 20 dB), attack (0.1 a 250 ms), hold (0 a 500 ms), release (0.1 a 1000 ms).
-- **Control de rango** (-60 a 0 dB) para limitar la expansión máxima.
+- **Controles estándar**: threshold (-60 a 0 dB), range (-100 a 0 dB), ratio (1:1 a 20:1), knee (1 a 10 dB), attack (0.1 a 250 ms), hold (0 a 250 ms), release (0.1 a 1000 ms).
+- **Control de rango** (-100 a 0 dB) para limitar la expansión máxima.
 - **Modo Delta para monitorización** de la señal diferencia (entrada vs salida).
 - **Softclipping asimétrico**, aplicado tras expansión y makeup gain.
 - **Control Dry/Wet (0 a 100%)** para mezcla de señal procesada.
-- **Procesamiento mono, mono-eséreo y estéreo**, con detección de envolvente compartida.
+- **Procesamiento mono, mono-estéreo y estéreo**, con detección de envolvente compartida.
 - **Sistema lookahead** (0 a 10 ms) para procesamiento predictivo.
 - **Visualización gráfica**: medidores de entrada, salida y reducción de ganancia.
 - **Gestión de presets** (usuario y fábrica).
@@ -131,4 +131,4 @@ Los tests validan los formatos VST3 y AU del plugin.
 
 ---
 
-*© 2025 Juan Carlos Blancas – JCBExpander v0.9.992 beta*
+*© 2025 Juan Carlos Blancas – JCBExpander v0.9.1 beta*
