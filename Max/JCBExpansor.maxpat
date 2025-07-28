@@ -18,8 +18,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 131.0, 29.0, 297.0, 20.0 ],
-					"text" : "/Users/jcb/JUCEProjects/JCBExpander/exported-code"
+					"patching_rect" : [ 131.0, 29.0, 297.0, 20.0 ]
 				}
 
 			}
@@ -3135,10 +3134,6 @@
 					}
 ,
 					"patching_rect" : [ 160.0, 550.0, 313.0, 22.0 ],
-					"saved_object_attributes" : 					{
-						"exportfolder" : "Sequoia:/Users/jcb/JUCEProjects/JCBExpander/exported-code/"
-					}
-,
 					"text" : "gen~ @title JCBExpander"
 				}
 
