@@ -108,11 +108,6 @@ private:
     // Sistema de idiomas para tooltips
     enum class TooltipLanguage { Spanish, English };
     
-    // Sistema de actualización diferida de parámetros para thread safety con AAX
-    struct DeferredParameterUpdate {
-        juce::String paramID;
-        float normalizedValue;
-    };
     
     //==========================================================================
     // CLASES LOOK AND FEEL
@@ -141,22 +136,51 @@ private:
     {
         TransferFunctionParameterListener(JCBExpanderAudioProcessorEditor* e) : editor(e) {}
         
-        void parameterChanged(const juce::String& parameterID, float /*newValue*/) override
+        void parameterChanged(const juce::String& parameterID, float newValue) override
         {
-            if (parameterID == "b_THD" || parameterID == "c_RATIO" || parameterID == "q_KNEE")
-            {
-                // Usar SafePointer para thread safety
-                juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeEditor(editor);
-                
-                juce::MessageManager::callAsync([safeEditor]() {
-                    if (safeEditor)
-                        safeEditor->updateTransferDisplay();
-                });
+            // NO llamar callAsync desde aquí - puede ejecutarse en audio thread
+            // Solo guardar valores en atómicos para procesamiento posterior en Timer
+            
+            if (parameterID == "b_THD") {
+                editor->pendingThresholdValue.store(newValue);
+                editor->hasUIUpdates.store(true);
+            }
+            else if (parameterID == "c_RATIO") {
+                editor->pendingRatioValue.store(newValue);
+                editor->hasUIUpdates.store(true);
+            }
+            else if (parameterID == "q_KNEE") {
+                editor->pendingKneeValue.store(newValue);
+                editor->hasUIUpdates.store(true);
             }
         }
         
         JCBExpanderAudioProcessorEditor* editor;
     };
+    
+    // Listener separado para DELTA (como en JCBCompressor)
+    struct DeltaParameterListener : public juce::AudioProcessorValueTreeState::Listener
+    {
+        JCBExpanderAudioProcessorEditor* editor;
+        
+        DeltaParameterListener(JCBExpanderAudioProcessorEditor* e) : editor(e) {}
+        
+        void parameterChanged(const juce::String& parameterID, float newValue) override
+        {
+            if (parameterID == "v_DELTA")
+            {
+                // NO llamar callAsync - solo guardar en atómico
+                editor->pendingDeltaValue.store(newValue);
+                editor->hasUIUpdates.store(true);
+            }
+        }
+    };
+    
+    //==========================================================================
+    // LOOK AND FEEL - DEBEN IR PRIMERO PARA DESTRUIRSE AL FINAL
+    //==========================================================================
+    CustomSlider::LookAndFeel sliderLAFBig;
+    SmallButtonLAF smallButtonLAF;
     
     //==========================================================================
     // COMPONENTES DE DISPLAY PRINCIPALES
@@ -284,7 +308,7 @@ private:
     // Botones superiores junto a presets (y=15)
     struct TopButtons {
         juce::TextButton abStateButton{"A/B"};
-        juce::TextButton abCopyButton{"A→B"};
+        juce::TextButton abCopyButton{"A-B"};
     } topButtons;
     
     // Botón central inferior (y=163)  
@@ -324,7 +348,7 @@ private:
     //==========================================================================
     
     // Título y versión en la parte inferior (combinado como ExpansorGate)
-    juce::TextButton titleLink{"JCBComp v0.9.992 beta"};
+    juce::TextButton titleLink{""};
     
     // Imágenes de fondo
     juce::ImageComponent backgroundImage;
@@ -558,57 +582,56 @@ private:
             auto blockName = getBlockAtPosition(event.position);
             if (blockName.isNotEmpty())
             {
-                // Thread-safe: mover operaciones pesadas a MessageManager::callAsync
-                juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeOwner(&owner);
-                juce::MessageManager::callAsync([safeOwner, blockName]() {
-                    if (!safeOwner) return;  // Componente fue eliminado
-                    
-                    // Crear CodeWindow si no existe (solo en message thread)
-                    if (safeOwner->codeWindow == nullptr)
-                    {
-                        safeOwner->codeWindow = std::make_unique<CodeWindow>();
-                    }
-                    
-                    // Cargar código desde cache thread-safe
-                    juce::String genCode = safeOwner->loadCodeFromFile(blockName);
-                    
-                    // Determinar título de ventana: usar "OUTPUT" para bloques específicos
-                    juce::String windowTitle = blockName;
-                    if (blockName == "LOOKAHEAD" || blockName == "MAKEUP" || 
-                        blockName == "OUTPUT" || blockName == "DELTA") {
-                        windowTitle = "OUTPUT";
-                    }
-                    
-                    safeOwner->codeWindow->setCode(genCode, windowTitle);
-                    
-                    // Configurar colores: fondo negro sólido, texto blanco
-                    safeOwner->codeWindow->setHaloColour(juce::Colours::white);
-                    
-                    // Configurar callback de cierre
-                    safeOwner->codeWindow->onClose = [safeOwner]() {
-                        if (safeOwner) safeOwner->hideCodeWindow();
-                    };
-                    
-                    // Calcular tamaño responsivo
-                    int pluginWidth = safeOwner->getWidth();
-                    int pluginHeight = safeOwner->getHeight();
-                    
-                    int windowWidth = static_cast<int>(pluginWidth * 0.35f);
-                    int windowHeight = static_cast<int>(pluginHeight * 0.50f);
-                    
-                    // Limitar tamaños
-                    windowWidth = juce::jlimit(350, 600, windowWidth);
-                    windowHeight = juce::jlimit(250, 450, windowHeight);
-                    
-                    int x = pluginWidth / 2 - windowWidth / 2;
-                    int y = pluginHeight / 2 - windowHeight / 2;
-                    
-                    safeOwner->addChildComponent(safeOwner->codeWindow.get());
-                    safeOwner->codeWindow->setBounds(x, y, windowWidth, windowHeight);
-                    safeOwner->codeWindow->setVisible(true);
-                    safeOwner->codeWindow->toFront(true);
-                    safeOwner->codeWindow->grabKeyboardFocus();
-                });
+                // Ya estamos en message thread desde el click del mouse
+                // No necesitamos MessageManager::callAsync
+                
+                // Crear CodeWindow si no existe
+                if (owner.codeWindow == nullptr)
+                {
+                    owner.codeWindow = std::make_unique<CodeWindow>();
+                }
+                
+                // Cargar código desde cache
+                juce::String genCode = owner.loadCodeFromFile(blockName);
+                
+                // Determinar título de ventana: usar "OUTPUT" para bloques específicos
+                juce::String windowTitle = blockName;
+                if (blockName == "LOOKAHEAD" || blockName == "MAKEUP" || 
+                    blockName == "OUTPUT" || blockName == "DELTA") {
+                    windowTitle = "OUTPUT";
+                }
+                
+                owner.codeWindow->setCode(genCode, windowTitle);
+                
+                // Configurar colores: fondo negro sólido, texto blanco
+                owner.codeWindow->setHaloColour(juce::Colours::white);
+                
+                // Configurar callback de cierre
+                // Capturar referencia al owner
+                auto& ownerRef = owner;
+                owner.codeWindow->onClose = [&ownerRef]() {
+                    ownerRef.hideCodeWindow();
+                };
+                
+                // Calcular tamaño responsivo
+                int pluginWidth = owner.getWidth();
+                int pluginHeight = owner.getHeight();
+                
+                int windowWidth = static_cast<int>(pluginWidth * 0.35f);
+                int windowHeight = static_cast<int>(pluginHeight * 0.50f);
+                
+                // Limitar tamaños
+                windowWidth = juce::jlimit(350, 600, windowWidth);
+                windowHeight = juce::jlimit(250, 450, windowHeight);
+                
+                int x = pluginWidth / 2 - windowWidth / 2;
+                int y = pluginHeight / 2 - windowHeight / 2;
+                
+                owner.addChildComponent(owner.codeWindow.get());
+                owner.codeWindow->setBounds(x, y, windowWidth, windowHeight);
+                owner.codeWindow->setVisible(true);
+                owner.codeWindow->toFront(true);
+                owner.codeWindow->grabKeyboardFocus();
             }
         }
         
@@ -876,24 +899,15 @@ private:
     //==========================================================================
     void showCredits();
     void hideCredits();
+    void exitDeltaMode();
     
-    //==========================================================================
-    // THREAD SAFETY Y AUTOMATIZACIÓN
-    //==========================================================================
-    void queueParameterUpdate(const juce::String& paramID, float normalizedValue);
-    void processPendingParameterUpdates();
     
     //==========================================================================
     // VARIABLES DE STATE
     //==========================================================================
     
-    // Instancias de Look and Feel
-    CustomSlider::LookAndFeel sliderLAFBig;
-    SmallButtonLAF smallButtonLAF;
-    
     // Banderas de estado principales
     bool isLoadingPreset = false;
-    bool isProcessingQueue = false;  // Flag para prevenir deshacer durante procesamiento de cola
     bool isBypassed = false;
     bool bypassTextVisible = false;
     // Estado de interfaz
@@ -911,9 +925,13 @@ private:
     
     // Variables de thread safety
     std::atomic<int> automationUpdateCount{0};
-    std::vector<DeferredParameterUpdate> pendingParameterUpdates;
-    std::atomic<bool> hasPendingParameterUpdates{false};
-    mutable std::mutex parameterUpdateMutex;
+    
+    // Atómicos para valores pendientes de actualización UI (RT-safe)
+    std::atomic<float> pendingThresholdValue{-1.0f};
+    std::atomic<float> pendingRatioValue{-1.0f};
+    std::atomic<float> pendingKneeValue{-1.0f};
+    std::atomic<float> pendingDeltaValue{-1.0f};
+    std::atomic<bool> hasUIUpdates{false};
     
     // Sistema universal de decay para todos los DAWs
     void applyMeterDecayIfNeeded();
@@ -930,6 +948,7 @@ private:
     
     // Listeners especializados
     std::unique_ptr<TransferFunctionParameterListener> transferFunctionListener;
+    std::unique_ptr<DeltaParameterListener> deltaParameterListener;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JCBExpanderAudioProcessorEditor)
 };

@@ -23,6 +23,10 @@
 #include "Helpers/UTF8Helper.h"
 #include "BinaryData.h"
 
+//==============================================================================
+// HELPER FUNCTIONS
+//==============================================================================
+// Removido safeStringFromUTF8 - no se usa en el Editor
 
 //==============================================================================
 // CONSTRUCTOR Y DESTRUCTOR
@@ -73,7 +77,7 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     
     // NO agregar tooltip individual - solo usar la ventana general de tooltips
     // El tooltip se actualiza dinámicamente en updateTooltips() usando getTooltipText("title")
-    titleLink.setTooltip("");
+    // No establecer tooltip vacío - puede causar assertions
     
     // Configurar el click para mostrar créditos
     titleLink.onClick = [this]() {
@@ -132,19 +136,19 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     
     // Conectar callbacks del transfer display para actualizar knobs
     transferDisplay.onThresholdChange = [this](float newThreshold) {
-        leftTopKnobs.thdSlider.setValue(newThreshold, juce::sendNotification);
+        leftTopKnobs.thdSlider.setValue(newThreshold, juce::dontSendNotification);
         handleParameterChange();  // Marcar preset como modificado
     };
     transferDisplay.onRatioChange = [this](float newRatio) {
-        leftTopKnobs.ratioSlider.setValue(newRatio, juce::sendNotification);
+        leftTopKnobs.ratioSlider.setValue(newRatio, juce::dontSendNotification);
         handleParameterChange();  // Marcar preset como modificado
     };
     transferDisplay.onKneeChange = [this](float newKnee) {
-        leftTopKnobs.kneeSlider.setValue(newKnee, juce::sendNotification);
+        leftTopKnobs.kneeSlider.setValue(newKnee, juce::dontSendNotification);
         handleParameterChange();  // Marcar preset como modificado
     };
     transferDisplay.onRangeChange = [this](float newRange) {
-        rightTopControls.rangeSlider.setValue(newRange, juce::sendNotification);
+        rightTopControls.rangeSlider.setValue(newRange, juce::dontSendNotification);
         handleParameterChange();  // Marcar preset como modificado
     };
     
@@ -156,6 +160,10 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     processor.apvts.addParameterListener("b_THD", transferFunctionListener.get());
     processor.apvts.addParameterListener("c_RATIO", transferFunctionListener.get());
     processor.apvts.addParameterListener("q_KNEE", transferFunctionListener.get());
+    
+    // Registrar listener separado para DELTA (como JCBCompressor)
+    deltaParameterListener = std::make_unique<DeltaParameterListener>(this);
+    processor.apvts.addParameterListener("v_DELTA", deltaParameterListener.get());
     
     // Configurar estado inicial del idioma
     if (processor.getTooltipLanguageEnglish()) {
@@ -170,9 +178,6 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
 
 
 
-    // Actualizar todos los tooltips basado en idioma inicial
-    updateAllTooltips();
-    
     // Configurar AUTO RELEASE button
     
     // Configurar estados iniciales
@@ -209,12 +214,8 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     grMeter.setVisible(initialEnvelopeState);
     
     // Actualizar valores de sliders desde APVTS para evitar problemas al cargar sesión
-    // Usar MessageManager::callAsync para ejecución thread-safe sin delay
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<JCBExpanderAudioProcessorEditor>(this)]() {
-        if (safeThis) {
-            safeThis->updateSliderValues();
-        }
-    });
+    // Llamar directamente - estamos en el constructor que se ejecuta en message thread
+    updateSliderValues();
     
     // Configurar estado inicial del tooltip toggle y language button
     bool initialTooltipState = processor.getTooltipEnabled();
@@ -229,9 +230,10 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     // Aplicar estados iniciales de todos los modos en el orden correcto
     updateButtonStates();
     
-    
     // Inicializar texto del botón AR basado en el estado actual del parámetro
     
+    // Actualizar todos los tooltips al final cuando todos los componentes están listos
+    updateAllTooltips();
 }
 
 JCBExpanderAudioProcessorEditor::~JCBExpanderAudioProcessorEditor()
@@ -239,12 +241,39 @@ JCBExpanderAudioProcessorEditor::~JCBExpanderAudioProcessorEditor()
     // CRÍTICO: Detener timer PRIMERO para prevenir crashes durante destrucción
     stopTimer();
     
+    // NUEVO: Cerrar popups y UI efímera
+    if (presetArea.presetMenu.isVisible()) 
+        presetArea.presetMenu.hidePopup();
+    hideDiagram();
+    hideCodeWindow();
+    
+    // NUEVO: Limpiar LookAndFeels de todos los sliders
+    leftTopKnobs.thdSlider.setLookAndFeel(nullptr);
+    leftTopKnobs.ratioSlider.setLookAndFeel(nullptr);
+    leftTopKnobs.kneeSlider.setLookAndFeel(nullptr);
+    leftBottomKnobs.drywetSlider.setLookAndFeel(nullptr);
+    leftBottomKnobs.lookaheadSlider.setLookAndFeel(nullptr);
+    leftBottomKnobs.clipSlider.setLookAndFeel(nullptr);
+    rightBottomKnobs.atkSlider.setLookAndFeel(nullptr);
+    rightBottomKnobs.relSlider.setLookAndFeel(nullptr);
+    rightBottomKnobs.holdSlider.setLookAndFeel(nullptr);
+    rightTopControls.rangeSlider.setLookAndFeel(nullptr);
+    rightTopControls.smoothSlider.setLookAndFeel(nullptr);
+    rightTopControls.reactSlider.setLookAndFeel(nullptr);
+    sidechainControls.hpfSlider.setLookAndFeel(nullptr);
+    sidechainControls.lpfSlider.setLookAndFeel(nullptr);
+    
     // Eliminar parameter listeners
     if (transferFunctionListener)
     {
         processor.apvts.removeParameterListener("b_THD", transferFunctionListener.get());
         processor.apvts.removeParameterListener("c_RATIO", transferFunctionListener.get());
         processor.apvts.removeParameterListener("q_KNEE", transferFunctionListener.get());
+    }
+    
+    if (deltaParameterListener)
+    {
+        processor.apvts.removeParameterListener("v_DELTA", deltaParameterListener.get());
     }
     
     setLookAndFeel(nullptr);
@@ -509,6 +538,34 @@ void JCBExpanderAudioProcessorEditor::timerCallback()
     
     updateMeters();
     
+    // Verificar si el processor necesita actualización del editor
+    if (processor.needsEditorUpdate.exchange(false))
+    {
+        updateTransferFunctionFromProcessor();
+    }
+    
+    // Procesar actualizaciones de UI pendientes desde atómicos (thread-safe)
+    if (hasUIUpdates.load())
+    {
+        hasUIUpdates.store(false);
+        
+        // Procesar cambio de Delta
+        float deltaValue = pendingDeltaValue.exchange(-1.0f);
+        if (deltaValue >= 0.0f) {
+            bool deltaActive = deltaValue > 0.5f;
+            applyDeltaModeToAllControls(deltaActive);
+        }
+        
+        // Procesar cambios de la función de transferencia
+        float thresholdValue = pendingThresholdValue.exchange(-1.0f);
+        float ratioValue = pendingRatioValue.exchange(-1.0f);
+        float kneeValue = pendingKneeValue.exchange(-1.0f);
+        
+        if (thresholdValue >= 0.0f || ratioValue >= 0.0f || kneeValue >= 0.0f) {
+            updateTransferDisplay();
+        }
+    }
+    
     // Actualizar estado visual de botones undo/redo
     bool canUndo = undoManager.canUndo();
     bool canRedo = undoManager.canRedo();
@@ -644,7 +701,7 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
             parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
             sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
             if (centerButtons.diagramButton.getToggleState()) {
-                centerButtons.diagramButton.setToggleState(false, juce::dontSendNotification);
+                centerButtons.diagramButton.setToggleState(false, juce::sendNotification);
                 hideDiagram(); // Cerrar DIAGRAM si está abierto
             }
         }
@@ -678,7 +735,7 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
             parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
             parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
             if (centerButtons.diagramButton.getToggleState()) {
-                centerButtons.diagramButton.setToggleState(false, juce::dontSendNotification);
+                centerButtons.diagramButton.setToggleState(false, juce::sendNotification);
                 hideDiagram(); // Cerrar DIAGRAM si está abierto
             }
         }
@@ -704,41 +761,41 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
     else if (button == &presetArea.saveButton)
     {
         // Desactivar botones momentáneos antes de guardar
-        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-        parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
-        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+        parameterButtons.bypassButton.setToggleState(false, juce::dontSendNotification);
+        parameterButtons.deltaButton.setToggleState(false, juce::dontSendNotification);
+        sidechainControls.soloScButton.setToggleState(false, juce::dontSendNotification);
         savePresetFile();
     }
     else if (button == &presetArea.saveAsButton)
     {
         // Desactivar botones momentáneos antes de guardar
-        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-        parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
-        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+        parameterButtons.bypassButton.setToggleState(false, juce::dontSendNotification);
+        parameterButtons.deltaButton.setToggleState(false, juce::dontSendNotification);
+        sidechainControls.soloScButton.setToggleState(false, juce::dontSendNotification);
         saveAsPresetFile();
     }
     else if (button == &presetArea.deleteButton)
     {
         // Desactivar botones momentáneos antes de mostrar el diálogo
-        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-        parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
-        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+        parameterButtons.bypassButton.setToggleState(false, juce::dontSendNotification);
+        parameterButtons.deltaButton.setToggleState(false, juce::dontSendNotification);
+        sidechainControls.soloScButton.setToggleState(false, juce::dontSendNotification);
         deletePresetFile();
     }
     else if (button == &presetArea.backButton)
     {
         // Desactivar botones momentáneos antes de cambiar preset
-        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-        parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
-        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+        parameterButtons.bypassButton.setToggleState(false, juce::dontSendNotification);
+        parameterButtons.deltaButton.setToggleState(false, juce::dontSendNotification);
+        sidechainControls.soloScButton.setToggleState(false, juce::dontSendNotification);
         selectPreviousPreset();
     }
     else if (button == &presetArea.nextButton)
     {
         // Desactivar botones momentáneos antes de cambiar preset
-        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-        parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
-        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+        parameterButtons.bypassButton.setToggleState(false, juce::dontSendNotification);
+        parameterButtons.deltaButton.setToggleState(false, juce::dontSendNotification);
+        sidechainControls.soloScButton.setToggleState(false, juce::dontSendNotification);
         selectNextPreset();
     }
     else if (button == &utilityButtons.tooltipToggleButton)
@@ -941,7 +998,21 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
     else if (button == &parameterButtons.deltaButton)
     {
         bool deltaActive = parameterButtons.deltaButton.getToggleState();
+        
+        if (deltaActive) {
+            // DELTA desactiva BYPASS, SOLO SC y DIAGRAM
+            parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
+            sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+            if (centerButtons.diagramButton.getToggleState()) {
+                centerButtons.diagramButton.setToggleState(false, juce::sendNotification);
+                hideDiagram();
+            }
+        }
+        
+        // Aplicar estado centralizado de DELTA
         applyDeltaModeToAllControls(deltaActive);
+        
+        updateButtonStates();
     }
 }
 
@@ -1271,7 +1342,7 @@ void JCBExpanderAudioProcessorEditor::setupKnobs()
     rightTopControls.rangeSlider.setTextBoxStyle(juce::Slider::TextBoxAbove, false, 70, 16);
     rightTopControls.rangeSlider.setLookAndFeel(&sliderLAFBig);
     rightTopControls.rangeSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    rightTopControls.rangeSlider.setRange(-60.0, 0.0, 0.1);
+    rightTopControls.rangeSlider.setRange(-100.0, 0.0, 0.1);
     rightTopControls.rangeSlider.setDoubleClickReturnValue(true, -20.0);
     rightTopControls.rangeSlider.setPopupDisplayEnabled(false, false, this);
     rightTopControls.rangeSlider.setTextBoxIsEditable(true);
@@ -1536,7 +1607,7 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
         *processor.apvts.getParameter("r_KEY"), sidechainControls.keyButton, &undoManager);
     sidechainControls.keyAttachment->onParameterChange = [this]() { handleParameterChange(); };
     // Tooltip se establece via updateAllTooltips() usando getTooltipText("extkey")
-    sidechainControls.keyButton.setTooltip("");
+    // No establecer tooltip vacío - puede causar assertions
     
     // Botón Solo SC - estilizado como ExpansorGate con acento cálido, SIEMPRE HABILITADO
     sidechainControls.soloScButton.setClickingTogglesState(true);
@@ -1809,7 +1880,8 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
             // IMPORTANTE: Forzar la sincronización directa de Gen~ para asegurar valores correctos de los parámetros
             // Esto replica la misma sincronización realizada durante la instanciación del plugin
             for (int i = 0; i < JCBExpander::num_params(); i++) {
-                auto paramName = juce::String(JCBExpander::getparametername(processor.getPluginState(), i));
+                const char* rawName = JCBExpander::getparametername(processor.getPluginState(), i);
+                auto paramName = juce::String(rawName ? rawName : "");
                 if (auto* param = processor.apvts.getRawParameterValue(paramName)) {
                     float value = param->load();
                     
@@ -1848,10 +1920,10 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
                         if (xmlState != nullptr && xmlState->hasTagName(processor.apvts.state.getType())) {
                             processor.apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
                             
-                            // Queue las actualizaciones de parámetros para botones momentáneos
-                            queueParameterUpdate("p_BYPASS", 0.0f);
-                            queueParameterUpdate("m_SOLOSC", 0.0f);
-                            queueParameterUpdate("v_DELTA", 0.0f);
+                            // Resetear parámetros momentáneos directamente (como JCBCompressor)
+                            processor.apvts.getParameter("p_BYPASS")->setValueNotifyingHost(0.0f);
+                            processor.apvts.getParameter("m_SOLOSC")->setValueNotifyingHost(0.0f);
+                            processor.apvts.getParameter("v_DELTA")->setValueNotifyingHost(0.0f);
                         }
                     }
                     break;
@@ -1869,10 +1941,10 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
                 if (xmlState != nullptr && xmlState->hasTagName(processor.apvts.state.getType())) {
                     processor.apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
                     
-                    // Queue actualizaciones de parámetros para botones momentáneos
-                    queueParameterUpdate("p_BYPASS", 0.0f);
-                    queueParameterUpdate("m_SOLOSC", 0.0f);
-                    queueParameterUpdate("v_DELTA", 0.0f);
+                    // Resetear parámetros momentáneos directamente (como JCBCompressor)
+                    processor.apvts.getParameter("p_BYPASS")->setValueNotifyingHost(0.0f);
+                    processor.apvts.getParameter("m_SOLOSC")->setValueNotifyingHost(0.0f);
+                    processor.apvts.getParameter("v_DELTA")->setValueNotifyingHost(0.0f);
                 }
             }
         }
@@ -2301,6 +2373,9 @@ void JCBExpanderAudioProcessorEditor::updateMeterStates()
     // Actualizar gradiente de salida para modo bypass
     outputMeterL.setBypassMode(bypassActive);
     outputMeterR.setBypassMode(bypassActive);
+    
+    // Sincronizar TransferDisplay con modo bypass
+    transferDisplay.setBypassMode(bypassActive);
 }
 
 void JCBExpanderAudioProcessorEditor::applyDeltaModeToAllControls(bool deltaActive)
@@ -2309,13 +2384,8 @@ void JCBExpanderAudioProcessorEditor::applyDeltaModeToAllControls(bool deltaActi
     // Solo cambiar aspectos visuales (colores de medidores y display)
     
     if (deltaActive) {
-        // DELTA desactiva BYPASS, SOLO SC y DIAGRAM (cambio de estado, no deshabilitación)
-        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
-        if (centerButtons.diagramButton.getToggleState()) {
-            centerButtons.diagramButton.setToggleState(false, juce::dontSendNotification);
-            hideDiagram();
-        }
+        // Nota: La desactivación de otros botones se maneja en buttonClicked
+        // para evitar duplicación y problemas de recursión
         
         // Cambiar medidores a modo delta (gradiente verde)
         inputMeterL.setDeltaMode(true);
@@ -2966,12 +3036,31 @@ void JCBExpanderAudioProcessorEditor::showCustomAlertDialog(const juce::String& 
     alertDialog->showDialog();
 }
 
+void JCBExpanderAudioProcessorEditor::exitDeltaMode()
+{
+    // Salir de modo DELTA si está activo
+    if (parameterButtons.deltaButton.getToggleState()) {
+        parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
+    }
+}
+
 void JCBExpanderAudioProcessorEditor::showCredits()
 {
-    // Desactivar estados operacionales antes de mostrar créditos (consistencia con DIAGRAM)
-    parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-    parameterButtons.deltaButton.setToggleState(false, juce::sendNotification);
-    sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+    // Salir de todos los modos especiales antes de mostrar créditos
+    // para evitar overlays o fondos especiales
+    
+    // Salir de DELTA
+    exitDeltaMode();
+    
+    // Salir de BYPASS
+    if (parameterButtons.bypassButton.getToggleState()) {
+        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
+    }
+    
+    // Salir de SOLO SC
+    if (sidechainControls.soloScButton.getToggleState()) {
+        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+    }
     
     if (creditsOverlay == nullptr)
     {
@@ -3107,30 +3196,30 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
 {
     if (currentLanguage == TooltipLanguage::Spanish)
     {
-        // Spanish tooltips
+        // Spanish tooltips - usar JUCE_UTF8 solo donde sea necesario para caracteres especiales
         if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.1 beta\nPlugin de audio open source\nClick para créditos");
         if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la expansión\nSeñales bajo este nivel se expanden\nRango: -60 a 0 dB | Por defecto: -18 dB");
         if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 1:1 a 40:1 | Por defecto: 4:1");
         if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 1 dB");
         if (key == "drywet") return JUCE_UTF8("DRY/WET: mezcla final entre señal original y procesada\nControl de balance entrada/salida\nRango: 0 a 100% | Por defecto: 100%");
-        if (key == "lookahead") return JUCE_UTF8("LOOK AHEAD: retardo para evitar overshooting\nReporta latencia al host\nRango: 0 a 10 ms | Por defecto: 0 ms");
+        if (key == "lookahead") return "LOOK AHEAD: retardo para evitar overshooting\nReporta latencia al host\nRango: 0 a 10 ms | Por defecto: 0 ms";
         if (key == "clip") return JUCE_UTF8("SOFT CLIP: limitador suave de salida\nPreviene saturación con distorsión armónica\nRango: 0/OFF a 1 | Por defecto: 0/OFF");
-        if (key == "react") return JUCE_UTF8("REACT: respuesta del detector a transientes.\nValores bajos: agresivo | Valores altos: suave.\nRango: 0 a 1 | Por defecto: 0");
+        if (key == "react") return "REACT: respuesta del detector a transientes.\nValores bajos: agresivo | Valores altos: suave.\nRango: 0 a 1 | Por defecto: 0";
         if (key == "attack") return JUCE_UTF8("ATTACK: tiempo para alcanzar máxima expansión\nVelocidad de respuesta del expansor\nRango: 0.1 a 250 ms | Por defecto: 1 ms");
         if (key == "release") return JUCE_UTF8("RELEASE: tiempo para volver sin expansión\nPermite valores extremos para efectos creativos\nRango: 0.1 a 1000 ms | Por defecto: 120 ms");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
         if (key == "range") return JUCE_UTF8("RANGE: límite inferior de expansión\nNivel máximo de reducción de ganancia\nRango: -100 a 0 dB | Por defecto: -20 dB");
         if (key == "delta") return JUCE_UTF8("DELTA: escucha la expansión aplicada\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
-        if (key == "trim") return JUCE_UTF8("TRIM INPUT: ganancia de entrada al expansor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
+        if (key == "trim") return "TRIM INPUT: ganancia de entrada al expansor\nAjusta el nivel antes del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB";
         if (key == "makeup") return JUCE_UTF8("MAKEUP: ganancia de salida manual\nAjusta el nivel final después del procesamiento\nRango: -12 a +12 dB | Por defecto: 0 dB");
         if (key == "hold") return JUCE_UTF8("HOLD: tiempo de retención antes del release\nMantiene la expansión por un período fijo\nRango: 0 a 500 ms | Por defecto: 0 ms");
         if (key == "sc") return JUCE_UTF8("FILTERS: activa los filtros del sidechain.\nPermite filtrar la señal, tanto interna como externa, que controla el expansor.\nValor por defecto: OFF");
         if (key == "extkey") return JUCE_UTF8("SIDECHAIN: selecciona cadena lateral interna o externa.\nINT usa la propia señal, EXT usa entradas auxiliares.\nValor por defecto: INT");
         if (key == "solosc") return JUCE_UTF8("SOLO SC: escucha filtros sidechain int/ext\nParámetro global, no automatizable\nRango: OFF/ON | Por defecto: OFF");
         if (key == "hpf") return JUCE_UTF8("HPF: filtro pasa altos del sidechain\nFiltra frecuencias del detector de expansión\nRango: 20 a 20k Hz | Por defecto: 20 Hz");
-        if (key == "lpf") return JUCE_UTF8("LPF: filtro pasa bajos del sidechain\nElimina frecuencias agudas del detector\nRango: 20 Hz a 20 kHz | Por defecto: 20 kHz");
-        if (key == "save") return JUCE_UTF8("GUARDAR: guarda o sobrescribe preset\nGuarda nuevo o actualiza el preset actual");
-        if (key == "saveas") return JUCE_UTF8("SAVE AS: guarda como nuevo preset\nCrea un nuevo archivo de preset con los valores actuales\nPermite crear presets personalizados");
+        if (key == "lpf") return "LPF: filtro pasa bajos del sidechain\nElimina frecuencias agudas del detector\nRango: 20 Hz a 20 kHz | Por defecto: 20 kHz";
+        if (key == "save") return "GUARDAR: guarda o sobrescribe preset\nGuarda nuevo o actualiza el preset actual";
+        if (key == "saveas") return "SAVE AS: guarda como nuevo preset\nCrea un nuevo archivo de preset con los valores actuales\nPermite crear presets personalizados";
         if (key == "delete") return JUCE_UTF8("BORRAR: elimina el preset seleccionado\nRequiere confirmación antes de borrar");
         if (key == "back") return JUCE_UTF8("ANTERIOR: selecciona el preset previo\nNavega hacia atrás en la lista de presets");
         if (key == "next") return JUCE_UTF8("SIGUIENTE: selecciona el próximo preset\nNavega hacia adelante en la lista de presets");
@@ -3139,12 +3228,12 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "resetgui") return JUCE_UTF8("SIZE: cicla entre tamaños de ventana\nActual → Máximo → Mínimo → Actual\nAjuste rápido del tamaño del plugin");
         if (key == "bypass") return JUCE_UTF8("BYPASS: desactiva el procesamiento del plugin\nParámetro global, no automatizable. Transición suave\nRango: OFF/ON | Por defecto: OFF");
         if (key == "graphics") return JUCE_UTF8("GRAPHICS: muestra envolventes en tiempo real\nVisualiza env entrada/salida e histograma expansión\nDesactivar mejora rendimiento en CPUs lentas");
-        if (key == "zoom") return JUCE_UTF8("ZOOM: cicla entre vista normal y ampliada\nNormal: -100 a 0dB | x2: -50 a 0dB");
+        if (key == "zoom") return "ZOOM: cicla entre vista normal y ampliada\nNormal: -100 a 0dB | x2: -50 a 0dB";
         if (key == "diagram") return JUCE_UTF8("DIAGRAM: muestra diagrama de bloques del procesador\nDespliega menú con código GenExpr por bloque para copiar");
         if (key == "transfer") return JUCE_UTF8("GRÁFICA: función de transferencia del expansor\nArrastra para modificar THD, Ratio y Knee\nClick derecho para opciones adicionales");
-        if (key == "tooltiptoggle") return JUCE_UTF8("TOOLTIP: muestra/oculta los tooltips de ayuda\nActiva o desactiva las ventanas de ayuda emergentes");
+        if (key == "tooltiptoggle") return "TOOLTIP: muestra/oculta los tooltips de ayuda\nActiva o desactiva las ventanas de ayuda emergentes";
         if (key == "tooltiplang") return JUCE_UTF8("IDIOMA: cambia entre español e inglés.\nAlterna el idioma de los tooltips.");
-        if (key == "sctrim") return JUCE_UTF8("SC TRIM: ganancia entrada sidechain -12 a +12 dB\nAjusta nivel del sidechain externo\nPor defecto: 0 dB, se activa con EXT KEY");
+        if (key == "sctrim") return "SC TRIM: ganancia entrada sidechain -12 a +12 dB\nAjusta nivel del sidechain externo\nPor defecto: 0 dB, se activa con EXT KEY";
         if (key == "link") return JUCE_UTF8("STEREO LINKED: siempre activo.\nEl plugin solo funciona en modo stereo linked.\nAmbos canales siempre están vinculados");
         if (key == "smooth") return JUCE_UTF8("SMOOTH: suavizado extra del detector de envolvente\nControla cantidad de suavizado en la detección\nRango: 0 (RAW) a 1 (SMOOTH) | Por defecto: 0");
     }
@@ -3192,7 +3281,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
         if (key == "smooth") return "SMOOTH: extra envelope detector smoothing\nControls smoothing amount applied to detection\nRange: 0 (RAW) to 1 (SMOOTH) | Default: 0";
     }
 
-    return "";
+    return juce::String();
 }
 
 
@@ -3238,85 +3327,7 @@ void JCBExpanderAudioProcessorEditor::applyAlphaToMainControls(float alpha)
 //==============================================================================
 // THREAD SAFETY Y AUTOMATIZACIÓN
 //==============================================================================
-void JCBExpanderAudioProcessorEditor::queueParameterUpdate(const juce::String& paramID, float normalizedValue)
-{
-    {
-        std::lock_guard<std::mutex> lock(parameterUpdateMutex);
-        
-        // Check if this parameter is already queued
-        auto it = std::find_if(pendingParameterUpdates.begin(), pendingParameterUpdates.end(),
-                               [&paramID](const DeferredParameterUpdate& update) {
-                                   return update.paramID == paramID;
-                               });
-        
-        if (it != pendingParameterUpdates.end()) {
-            // Actualizar entrada existente
-            it->normalizedValue = normalizedValue;
-        } else {
-            // Add new entry
-            pendingParameterUpdates.push_back({paramID, normalizedValue});
-        }
-    }
-    
-    hasPendingParameterUpdates.store(true);
-}
 
-void JCBExpanderAudioProcessorEditor::processPendingParameterUpdates()
-{
-    if (!hasPendingParameterUpdates.exchange(false)) {
-        return;
-    }
-    
-    std::vector<DeferredParameterUpdate> updates;
-    {
-        std::lock_guard<std::mutex> lock(parameterUpdateMutex);
-        updates = std::move(pendingParameterUpdates);
-        pendingParameterUpdates.clear();
-    }
-    
-    // Establecer flag para prevenir transacciones de undo durante procesamiento de queue
-    isProcessingQueue = true;
-    
-    // Process all updates on the message thread
-    for (const auto& update : updates) {
-        if (auto* param = processor.apvts.getParameter(update.paramID)) {
-            // Usar beginChangeGesture/endChangeGesture para prevenir transacciones de undo
-            param->beginChangeGesture();
-            param->setValueNotifyingHost(update.normalizedValue);
-            param->endChangeGesture();
-            
-            // CRÍTICO: Sincronización directa con Gen~ DSP
-            // Esto asegura que los valores del DEFAULT button lleguen al DSP
-            // Convertir valor normalizado a valor real usando el rango del parámetro
-            auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param);
-            if (floatParam) {
-                float realValue = floatParam->getNormalisableRange().convertFrom0to1(update.normalizedValue);
-                
-                if (update.paramID == "d_ATK" || update.paramID == "e_REL") {
-                    // Debug info for DEFAULT preset parameter updates
-                }
-                
-                // Llamar al método parameterChanged del processor para sincronizar con Gen~
-                processor.parameterChanged(update.paramID, realValue);
-            }
-            
-            // Manejo de AudioParameterBool para sincronización con Gen~
-            auto* boolParam = dynamic_cast<juce::AudioParameterBool*>(param);
-            if (boolParam) {
-                float realValue = update.normalizedValue >= 0.5f ? 1.0f : 0.0f;
-
-                
-                // Llamar al método parameterChanged del processor para sincronizar con Gen~
-                processor.parameterChanged(update.paramID, realValue);
-            }
-        }
-    }
-    
-    // Visual feedback (cambios de alpha) se maneja en timerCallback() para updates consistentes
-    
-    // Limpiar flag después del procesamiento
-    isProcessingQueue = false;
-}
 
 //==============================================================================
 // DIAGRAM Y CODE WINDOW
@@ -3324,25 +3335,21 @@ void JCBExpanderAudioProcessorEditor::processPendingParameterUpdates()
 
 void JCBExpanderAudioProcessorEditor::showDiagram()
 {
-    // Thread-safe: usar MessageManager::callAsync para UI pesadas
-    juce::Component::SafePointer<JCBExpanderAudioProcessorEditor> safeThis(this);
+    // Ya estamos en message thread cuando se llama desde un click de botón
+    // No necesitamos MessageManager::callAsync
     
-    juce::MessageManager::callAsync([safeThis]() {
-        if (!safeThis) return;
-        
-        // Crear overlay si no existe
-        if (!safeThis->diagramOverlay)
-        {
-            safeThis->diagramOverlay = std::make_unique<DiagramOverlay>(*safeThis);
-        }
-        
-        // Configurar y mostrar
-        safeThis->addChildComponent(safeThis->diagramOverlay.get());
-        safeThis->diagramOverlay->setBounds(safeThis->getLocalBounds());
-        safeThis->diagramOverlay->setVisible(true);
-        safeThis->diagramOverlay->toFront(true);
-        safeThis->centerButtons.diagramButton.setToggleState(true, juce::dontSendNotification);
-    });
+    // Crear overlay si no existe
+    if (!diagramOverlay)
+    {
+        diagramOverlay = std::make_unique<DiagramOverlay>(*this);
+    }
+    
+    // Configurar y mostrar
+    addChildComponent(diagramOverlay.get());
+    diagramOverlay->setBounds(getLocalBounds());
+    diagramOverlay->setVisible(true);
+    diagramOverlay->toFront(true);
+    centerButtons.diagramButton.setToggleState(true, juce::dontSendNotification);
 }
 
 void JCBExpanderAudioProcessorEditor::hideDiagram()

@@ -23,7 +23,13 @@ CustomComboBox::CustomComboBox()
 
 CustomComboBox::~CustomComboBox()
 {
-    hidePopup();
+    // Solo cerrar popup si estamos en el message thread correcto
+    if (juce::MessageManager::existsAndIsCurrentThread())
+    {
+        hidePopup();
+    }
+    // Si no estamos en el message thread, no hacer nada
+    // Los componentes children se destruirán automáticamente
 }
 
 //==============================================================================
@@ -80,6 +86,9 @@ void CustomComboBox::paint(juce::Graphics& g)
         displayText = textWhenNothingSelected;
     if (items.isEmpty() && !textWhenNoChoicesAvailable.isEmpty())
         displayText = textWhenNoChoicesAvailable;
+    // Añadir fallback final
+    if (displayText.isEmpty())
+        displayText = "-";
         
     g.drawFittedText(displayText, textBounds.toNearestInt(), juce::Justification::centred, 1);
 }
@@ -114,13 +123,15 @@ void CustomComboBox::mouseDown(const juce::MouseEvent& event)
 void CustomComboBox::mouseEnter(const juce::MouseEvent& event)
 {
     juce::ignoreUnused(event);
-    repaint();
+    if (isEnabled() && isShowing())
+        repaint();
 }
 
 void CustomComboBox::mouseExit(const juce::MouseEvent& event)
 {
     juce::ignoreUnused(event);
-    repaint();
+    if (isEnabled() && isShowing())
+        repaint();
 }
 
 bool CustomComboBox::hitTest(int x, int y)
@@ -134,7 +145,8 @@ bool CustomComboBox::hitTest(int x, int y)
 
 void CustomComboBox::addItem(const juce::String& text, int itemId)
 {
-    items.add({text, itemId});
+    // Asegurar que nunca se añade string vacío
+    items.add({ text.isNotEmpty() ? text : "-", itemId });
 }
 
 void CustomComboBox::addItemList(const juce::StringArray& itemsToAdd, int firstId)
@@ -237,7 +249,12 @@ juce::String CustomComboBox::getTextWhenNothingSelected() const
 
 void CustomComboBox::showPopup()
 {
-    if (isPopupShown || items.isEmpty())
+    // Verificar que estamos en message thread
+    jassert(juce::MessageManager::existsAndIsCurrentThread());
+    if (!juce::MessageManager::existsAndIsCurrentThread())
+        return;
+    
+    if (isPopupShown || items.isEmpty() || !isShowing())
         return;
         
     popupWindow = std::make_unique<PopupWindow>(*this);
@@ -277,6 +294,11 @@ void CustomComboBox::showPopup()
 
 void CustomComboBox::hidePopup()
 {
+    // Verificar que estamos en message thread
+    jassert(juce::MessageManager::existsAndIsCurrentThread());
+    if (!juce::MessageManager::existsAndIsCurrentThread())
+        return;
+    
     if (popupWindow != nullptr)
     {
         if (auto* parent = popupWindow->getParentComponent())

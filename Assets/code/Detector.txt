@@ -48,7 +48,7 @@ oldest_sq = rmsDelay.read(rms_window, interp="none");
 rms_sum_new = (input_squared + rmsSum) - oldest_sq;
 rms_sum_clipped = max(0, rms_sum_new);
 rms_value_sharp = sqrt(rms_sum_clipped * rms_window_inv);
-rmsSum = rms_sum_clipped;
+rmsSum = fixdenorm(rms_sum_clipped);         // Actualizar suma
 rmsDelay.write(input_squared);
 
 // =============================================================================

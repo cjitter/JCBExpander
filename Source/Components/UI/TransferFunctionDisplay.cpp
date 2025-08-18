@@ -171,9 +171,14 @@ void TransferFunctionDisplay::clearWaveformData()
 
 juce::String TransferFunctionDisplay::getTooltip()
 {
+    // Verificar que el componente esté inicializado y visible
+    if (!isShowing())
+        return juce::String();
+        
     // El tooltip se establece desde PluginEditor usando setHelpText()
     // Este método debe retornar el helpText establecido por el componente padre
-    return getHelpText();
+    auto helpText = getHelpText();
+    return helpText.isEmpty() ? juce::String() : helpText;
 }
 
 void TransferFunctionDisplay::setLogicStoppedState(bool stopped)

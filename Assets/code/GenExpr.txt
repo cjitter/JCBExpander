@@ -143,25 +143,6 @@ History hpfHistory6(0);                // HPF stage 2 input delay
 History hpfHistory7(0);                // HPF stage 2 input z^-1
 History hpfHistory8(0);                // HPF stage 2 output z^-2
 
-// Historias adicionales para filtros de sidechain (etapas 3 y 4)
-History lpfHistory9(0);                // LPF stage 3 input delay
-History lpfHistory10(0);               // LPF stage 3 output delay z^-1
-History lpfHistory11(0);               // LPF stage 3 input z^-1
-History lpfHistory12(0);               // LPF stage 3 output z^-2
-History lpfHistory13(0);               // LPF stage 4 input delay
-History lpfHistory14(0);               // LPF stage 4 output delay z^-1
-History lpfHistory15(0);               // LPF stage 4 input z^-1
-History lpfHistory16(0);               // LPF stage 4 output z^-2
-
-History hpfHistory9(0);                // HPF stage 3 output delay z^-1
-History hpfHistory10(0);               // HPF stage 3 input delay
-History hpfHistory11(0);               // HPF stage 3 input z^-1
-History hpfHistory12(0);               // HPF stage 3 output z^-2
-History hpfHistory13(0);               // HPF stage 4 output delay z^-1
-History hpfHistory14(0);               // HPF stage 4 input delay
-History hpfHistory15(0);               // HPF stage 4 input z^-1
-History hpfHistory16(0);               // HPF stage 4 output z^-2
-
 // Historias para smoothing de orden de filtros
 History hpfOrderHistory(0);            // Para suavizar cambio de orden HPF
 History lpfOrderHistory(0);            // Para suavizar cambio de orden LPF
@@ -212,9 +193,7 @@ rightProcessedOutput = 0;              // Salida procesada canal derecho
 // Constantes para optimización y legibilidad
 SMOOTH_HISTORY_FACTOR = 0.999;         // Factor de suavizado para valores históricos (99.9%)
 SMOOTH_PARAM_FACTOR = 0.001;           // Factor de suavizado para nuevos parámetros (0.1%)
-AUTO_MAKEUP_FACTOR = -0.7;             // Factor de compensación automática de ganancia
 LOOKAHEAD_DELAY_SAMPLES = 0.025*samplerate; // Muestras de delay para lookahead
-LOOKAHEAD_SMOOTH_FACTOR = 0.9999;      // Factor ultra lento para lookahead
 
 // PROCESAMIENTO PRINCIPAL
 
@@ -320,8 +299,8 @@ scEnableHistoryNext = fixdenorm(smoothScEnable);
 smoothSoftclip = (softclipHistory * SMOOTH_HISTORY_FACTOR) + (u_SOFTCLIP * SMOOTH_PARAM_FACTOR);
 softclipHistoryNext = fixdenorm(smoothSoftclip);
 
-// Lookahead Smoothing (ULTRA LENTO)
-smoothLookahead = (lookaheadHistory * LOOKAHEAD_SMOOTH_FACTOR) + (n_LOOKAHEAD * (1 - LOOKAHEAD_SMOOTH_FACTOR));
+// Lookahead Smoothing
+smoothLookahead = (lookaheadHistory * SMOOTH_HISTORY_FACTOR) + (n_LOOKAHEAD * SMOOTH_PARAM_FACTOR);
 lookaheadHistoryNext = fixdenorm(smoothLookahead);
 
 // =============================================================================
@@ -339,8 +318,8 @@ leftDelayedForCompression = leftOutputDelay.read(lookaheadSamples, interp="step"
 rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
 
 // Asignar salidas de medidores principales (señales que entran a la compresión)
-out4 = leftDelayedForCompression;
-out5 = rightDelayedForCompression;
+out4 = fixdenorm(leftDelayedForCompression);
+out5 = fixdenorm(rightDelayedForCompression);
 
 // Leer señales retrasadas para mezcla final (las escrituras se hacen más abajo después del trim)
 leftDelayedForMixing = leftInputDelay.read(lookaheadSamples, interp="step");
@@ -420,8 +399,8 @@ leftSidechainTrimmed = in3 * sidechainTrimReference;
 rightSidechainTrimmed = in4 * sidechainTrimReference;
 
 // Asignar salidas de sidechain (sin delay por ahora)
-out6 = leftSidechainTrimmed;
-out7 = rightSidechainTrimmed;
+out6 = fixdenorm(leftSidechainTrimmed);
+out7 = fixdenorm(rightSidechainTrimmed);
 
 // Crear señal mono de sidechain
 sidechainSignalMono = ((rightSidechainTrimmed + leftSidechainTrimmed)) * 0.707;  // Suma mono de sidechain
@@ -523,33 +502,11 @@ lpfHistory6Next = fixdenorm(lpfHistory8);
 lpfHistory7Next = fixdenorm(lpfFilteredSignal);
 lpfHistory8Next = fixdenorm(lpfStage2FilteredSignal);
 
-// Tercera etapa LPF (mantenida para compatibilidad pero no usada para 12/24 dB/oct)
-lpfStage3Input = lpfStage2FilteredSignal * lpfCoeffA2;
-lpfStage3FromHistory1 = lpfHistory11 * lpfCoeffA1;
-lpfStage3FromHistory2 = lpfHistory9 * lpfCoeffA0;
-lpfStage3Feedback1 = lpfHistory10 * lpfCoeffB2;
-lpfStage3Feedback2 = lpfHistory12 * lpfCoeffB1;
-lpfStage3FilteredSignal = ((((lpfStage3FromHistory2 + lpfStage3FromHistory1)) + lpfStage3Input)) - ((lpfStage3Feedback2 + lpfStage3Feedback1));
+// Tercera etapa LPF — desactivada (no usada en 12/24 dB/oct)
+lpfStage3FilteredSignal = lpfStage2FilteredSignal;  // passthrough
 
-// Actualizar historias LPF tercera etapa
-lpfHistory9Next = fixdenorm(lpfHistory11);
-lpfHistory10Next = fixdenorm(lpfHistory12);
-lpfHistory11Next = fixdenorm(lpfStage2FilteredSignal);
-lpfHistory12Next = fixdenorm(lpfStage3FilteredSignal);
-
-// Cuarta etapa LPF (mantenida para compatibilidad pero no usada para 12/24 dB/oct)
-lpfStage4Input = lpfStage3FilteredSignal * lpfCoeffA2;
-lpfStage4FromHistory1 = lpfHistory15 * lpfCoeffA1;
-lpfStage4FromHistory2 = lpfHistory13 * lpfCoeffA0;
-lpfStage4Feedback1 = lpfHistory14 * lpfCoeffB2;
-lpfStage4Feedback2 = lpfHistory16 * lpfCoeffB1;
-lpfStage4FilteredSignal = ((((lpfStage4FromHistory2 + lpfStage4FromHistory1)) + lpfStage4Input)) - ((lpfStage4Feedback2 + lpfStage4Feedback1));
-
-// Actualizar historias LPF cuarta etapa
-lpfHistory13Next = fixdenorm(lpfHistory15);
-lpfHistory14Next = fixdenorm(lpfHistory16);
-lpfHistory15Next = fixdenorm(lpfStage3FilteredSignal);
-lpfHistory16Next = fixdenorm(lpfStage4FilteredSignal);
+// Cuarta etapa LPF — desactivada (no usada en 12/24 dB/oct)
+lpfStage4FilteredSignal = lpfStage3FilteredSignal;  // passthrough
 
 // LPF - Seleccionar salida según orden (solo 12 o 24 dB/oct)
 if(lpfOrderDiscrete == 0) {
@@ -594,33 +551,11 @@ hpfHistory6Next = fixdenorm(hpfHistory7);
 hpfHistory7Next = fixdenorm(hpfFilteredSignal);
 hpfHistory8Next = fixdenorm(hpfStage2FilteredSignal);
 
-// Tercera etapa HPF (mantenida para compatibilidad pero no usada para 12/24 dB/oct)
-hpfStage3Input = hpfStage2FilteredSignal * hpfCoeffA2;
-hpfStage3FromHistory1 = hpfHistory11 * hpfCoeffA1;
-hpfStage3FromHistory2 = hpfHistory10 * hpfCoeffA0;
-hpfStage3Feedback1 = hpfHistory9 * hpfCoeffB2;
-hpfStage3Feedback2 = hpfHistory12 * hpfCoeffB1;
-hpfStage3FilteredSignal = ((((hpfStage3FromHistory2 + hpfStage3FromHistory1)) + hpfStage3Input)) - ((hpfStage3Feedback2 + hpfStage3Feedback1));
+// Tercera etapa HPF — desactivada (no usada en 12/24 dB/oct)
+hpfStage3FilteredSignal = hpfStage2FilteredSignal;  // passthrough
 
-// Actualizar historias HPF tercera etapa
-hpfHistory9Next = fixdenorm(hpfHistory12);
-hpfHistory10Next = fixdenorm(hpfHistory11);
-hpfHistory11Next = fixdenorm(hpfStage2FilteredSignal);
-hpfHistory12Next = fixdenorm(hpfStage3FilteredSignal);
-
-// Cuarta etapa HPF (mantenida para compatibilidad pero no usada para 12/24 dB/oct)
-hpfStage4Input = hpfStage3FilteredSignal * hpfCoeffA2;
-hpfStage4FromHistory1 = hpfHistory15 * hpfCoeffA1;
-hpfStage4FromHistory2 = hpfHistory14 * hpfCoeffA0;
-hpfStage4Feedback1 = hpfHistory13 * hpfCoeffB2;
-hpfStage4Feedback2 = hpfHistory16 * hpfCoeffB1;
-hpfStage4FilteredSignal = ((((hpfStage4FromHistory2 + hpfStage4FromHistory1)) + hpfStage4Input)) - ((hpfStage4Feedback2 + hpfStage4Feedback1));
-
-// Actualizar historias HPF cuarta etapa
-hpfHistory13Next = fixdenorm(hpfHistory16);
-hpfHistory14Next = fixdenorm(hpfHistory15);
-hpfHistory15Next = fixdenorm(hpfStage3FilteredSignal);
-hpfHistory16Next = fixdenorm(hpfStage4FilteredSignal);
+// Cuarta etapa HPF — desactivada (no usada en 12/24 dB/oct)
+hpfStage4FilteredSignal = hpfStage3FilteredSignal;  // passthrough
 
 // HPF - Seleccionar salida según orden (solo 12 o 24 dB/oct)
 if(hpfOrderDiscrete == 0) {
@@ -655,7 +590,7 @@ oldest_sq = rmsDelay.read(rms_window, interp="none");   // Leer muestra más ant
 rms_sum_new = ((input_squared + rmsSum)) - oldest_sq;   // Cálculo incremental
 rms_sum_clipped = max(0, rms_sum_new);                  // Evitar valores negativos
 rms_value_sharp = sqrt(rms_sum_clipped * rms_window_inv); // RMS final
-rmsSum = rms_sum_clipped;                               // Actualizar suma
+rmsSum = fixdenorm(rms_sum_clipped);                    // Actualizar suma
 rmsDelay.write(input_squared);                          // Escribir nueva muestra
 
 // =============================================================================
@@ -750,52 +685,35 @@ delta_control = clamp(smoothDeltaMode, 0, 1);                 // Asegurar rango 
 delta_signal = leftDelayedForCompression - expandedLeft;      // Diferencia = lo que se quitó
 leftWithDelta = mix(expandedLeft, delta_signal, delta_control); // Mezclar según control
 
-// AUTO MAKEUP - Compensación automática de ganancia (70% del gain reduction)
-autoMakeupGainReduction = gainReductionDb;                    // Usar gain reduction como referencia
-reduction_smooth_mul = reductionHistLeft * SMOOTH_HISTORY_FACTOR; // Suavizar historia
-reduction_current_mul = autoMakeupGainReduction * SMOOTH_PARAM_FACTOR; // Suavizar actual
-reduction_smoothed = reduction_current_mul + reduction_smooth_mul; // Combinar suavizado
-auto_makeup = reduction_smoothed * AUTO_MAKEUP_FACTOR;        // Aplicar factor -0.7 (70%)
-combined_makeup = auto_makeup + leftMakeupGain;               // Combinar con makeup manual
-
 final_makeup_db = leftMakeupGain;
-
 
 // Cuando DELTA está activo, forzar makeup a 0dB
 finalMakeupDbWithDelta = mix(final_makeup_db, 0, smoothDeltaMode); // 0dB cuando DELTA=1
 makeup_linear = dbtoa(finalMakeupDbWithDelta);            // Convertir a factor lineal
 leftWithMakeup = leftWithDelta * makeup_linear;               // Aplicar makeup final
-reductionHistLeft = fixdenorm(reduction_smoothed);            // Actualizar historia
 
 // Sin compresión paralela - pasar directamente la señal procesada
-leftParallelMixed = leftWithMakeup;
+// WET-ONLY SOFTCLIP (antes del Dry/Wet)
+maxOutput = 0.989;
+saturationAmount = clamp(smoothSoftclip, 0, 1);
+// En modo DELTA desactivamos la saturación
+effectiveSaturationAmount = mix(saturationAmount, 0, smoothDeltaMode);
+
+wetInL = leftWithMakeup;
+wetSatL = (wetInL > 0) ? (tanh(wetInL * 1.2) * 0.833)
+                       : (tanh(wetInL * 0.8) * 1.25);
+wetSatL = clamp(wetSatL, -maxOutput, maxOutput);
+
+// Mezcla entre WET limpio y WET saturado
+leftParallelMixed = mix(wetInL, wetSatL, effectiveSaturationAmount);
 
 // MIX DRY/WET - Balance entre señal original y procesada
 leftDryWetMixed = mix(leftDelayedForMixing, leftParallelMixed, effectiveDryWetMix); // Usar effectiveDryWetMix (afectado por DELTA)
 leftWithSidechain = mix(leftDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain); // Solo sidechain
 
-// OUTPUT PROCESSING - Saturación asimétrica (Off/Soft)
-maxOutput = 0.989; // Limitar a -0.1 dBFS (0.989 lineal) para dejar headroom
-saturationAmount = clamp(smoothSoftclip, 0, 1);                  // Cantidad de saturación (0=Off, 1=Full)
-// Cuando DELTA está activo, bypasear también el softclipping
-effectiveSaturationAmount = mix(saturationAmount, 0, smoothDeltaMode); // 0 cuando DELTA=1
-
-// Saturación asimétrica para añadir color/calidez
-leftSaturated = 0;  // Declarar variable
-if(leftWithSidechain > 0) {
-    // Semiciclo positivo - más saturación (genera armónicos pares)
-    leftSaturated = tanh(leftWithSidechain * 1.2) * 0.833;   // Compensar ganancia
-}
-else {
-    // Semiciclo negativo - menos saturación
-    leftSaturated = tanh(leftWithSidechain * 0.8) * 1.25;    // Compensar ganancia
-}
-leftSaturated = clamp(leftSaturated, -maxOutput, maxOutput);
-
-// Mezclar señal original con saturada según el parámetro
-leftProcessedOutput = mix(leftWithSidechain, leftSaturated, effectiveSaturationAmount);
-leftFinalOutput = mix(leftDelayedForMixing, leftProcessedOutput, smoothBypassAmount); // Bypass final
-out1 = leftFinalOutput;                                       // Salida canal izquierdo
+// Bypass final (sin softclip aquí)
+leftFinalOutput = mix(leftDelayedForMixing, leftWithSidechain, smoothBypassAmount); // Bypass final
+out1 = fixdenorm(leftFinalOutput);
 
 // =============================================================================
 // PROCESAMIENTO DE SALIDA - Canal Derecho
@@ -813,50 +731,35 @@ rightDeltaControl = clamp(smoothDeltaMode, 0, 1);                // Asegurar ran
 rightDeltaSignal = rightDelayedForCompression - expandedRight;   // Diferencia = lo que se quitó
 rightWithDelta = mix(expandedRight, rightDeltaSignal, rightDeltaControl); // Mezclar según control
 
-// AUTO MAKEUP - Compensación automática de ganancia (70% del gain reduction)
-rightAutoMakeupGainReduction = rightGainReductionDb;              // Usar gain reduction como referencia
-rightReductionSmoothMul = reductionHistRight * SMOOTH_HISTORY_FACTOR; // Suavizar historia
-rightReductionCurrentMul = rightAutoMakeupGainReduction * SMOOTH_PARAM_FACTOR; // Suavizar actual
-rightReductionSmoothed = rightReductionCurrentMul + rightReductionSmoothMul; // Combinar suavizado
-rightAutoMakeup = rightReductionSmoothed * AUTO_MAKEUP_FACTOR;    // Aplicar factor -0.7 (70%)
-rightCombinedMakeup = rightAutoMakeup + rightMakeupGain;          // Combinar con makeup manual
-
 rightFinalMakeupDb = rightMakeupGain;
 
 // Cuando DELTA está activo, forzar makeup a 0dB
 rightFinalMakeupDbWithDelta = mix(rightFinalMakeupDb, 0, smoothDeltaMode); // 0dB cuando DELTA=1
 rightMakeupLinear = dbtoa(rightFinalMakeupDbWithDelta);         // Convertir a factor lineal
 rightWithMakeup = rightWithDelta * rightMakeupLinear;             // Aplicar makeup final
-reductionHistRight = fixdenorm(rightReductionSmoothed);           // Actualizar historia
 
 // Sin compresión paralela - pasar directamente la señal procesada
-rightParallelMixed = rightWithMakeup;
+// WET-ONLY SOFTCLIP (antes del Dry/Wet)
+maxOutput = 0.989;
+rightSaturationAmount = clamp(smoothSoftclip, 0, 1);
+rightEffectiveSaturationAmount = mix(rightSaturationAmount, 0, smoothDeltaMode);
+
+wetInR = rightWithMakeup;
+wetSatR = (wetInR > 0) ? (tanh(wetInR * 1.2) * 0.833)
+                       : (tanh(wetInR * 0.8) * 1.25);
+wetSatR = clamp(wetSatR, -maxOutput, maxOutput);
+
+// Mezcla entre WET limpio y WET saturado
+rightParallelMixed = mix(wetInR, wetSatR, rightEffectiveSaturationAmount);
 
 // MIX DRY/WET - Balance entre señal original y procesada
 rightDryWetMixed = mix(rightDelayedForMixing, rightParallelMixed, effectiveDryWetMix); // Usar effectiveDryWetMix
-rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedTap, smoothSoloSidechain); // Solo sidechain
+//rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedTap, smoothSoloSidechain); // Solo sidechain
+rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain); // Solo sidechain
 
-// OUTPUT PROCESSING - Saturación asimétrica (Off/Soft)
-rightSaturationAmount = clamp(smoothSoftclip, 0, 1);             // Cantidad de saturación (0=Off, 1=Full)
-// Cuando DELTA está activo, bypasear también el softclipping
-rightEffectiveSaturationAmount = mix(rightSaturationAmount, 0, smoothDeltaMode); // 0 cuando DELTA=1
-
-// Saturación asimétrica para añadir color/calidez
-rightSaturated = 0;  // Declarar variable
-if(rightWithSidechain > 0) {
-    // Semiciclo positivo - más saturación (genera armónicos pares)
-    rightSaturated = tanh(rightWithSidechain * 1.2) * 0.833;  // Compensar ganancia
-}
-else {
-    // Semiciclo negativo - menos saturación
-    rightSaturated = tanh(rightWithSidechain * 0.8) * 1.25;   // Compensar ganancia
-}
-rightSaturated = clamp(rightSaturated, -maxOutput, maxOutput);
-
-// Mezclar señal original con saturada según el parámetro
-rightProcessedOutput = mix(rightWithSidechain, rightSaturated, rightEffectiveSaturationAmount);
-rightFinalOutput = mix(rightDelayedForMixing, rightProcessedOutput, smoothBypassAmount); // Bypass final
-out2 = rightFinalOutput;                                      // Salida canal derecho
+// Bypass final (sin softclip aquí)
+rightFinalOutput = mix(rightDelayedForMixing, rightWithSidechain, smoothBypassAmount); // Bypass final
+out2 = fixdenorm(rightFinalOutput);
 
 // =============================================================================
 // GAIN REDUCTION OUTPUT - Medidor de compresión para UI
@@ -867,7 +770,7 @@ out2 = rightFinalOutput;                                      // Salida canal de
 realExpansionLinear = dbtoa(gainReductionDbLimited);           // Reducción real CON limitación de range
 gainReductionMeter = mix(unitaryReference, realExpansionLinear, bypassInverted); // 1=activo, 0=bypass
 gainReductionOutput = min(gainReductionMeter, 1);              // Limitar a máximo 1.0
-out3 = gainReductionOutput;                                    // Salida para medidor GR
+out3 = fixdenorm(gainReductionOutput);                         // Salida para medidor GR
 
 // =============================================================================
 // ACTUALIZACIÓN DE HISTORIAS PARA EL SIGUIENTE CICLO
@@ -908,14 +811,6 @@ lpfHistory5 = lpfHistory5Next;
 lpfHistory6 = lpfHistory6Next;
 lpfHistory7 = lpfHistory7Next;
 lpfHistory8 = lpfHistory8Next;
-lpfHistory9 = lpfHistory9Next;
-lpfHistory10 = lpfHistory10Next;
-lpfHistory11 = lpfHistory11Next;
-lpfHistory12 = lpfHistory12Next;
-lpfHistory13 = lpfHistory13Next;
-lpfHistory14 = lpfHistory14Next;
-lpfHistory15 = lpfHistory15Next;
-lpfHistory16 = lpfHistory16Next;
 
 // Historias de filtros HPF (etapas 1-4)
 hpfHistory1 = hpfHistory1Next;
@@ -926,14 +821,6 @@ hpfHistory5 = hpfHistory5Next;
 hpfHistory6 = hpfHistory6Next;
 hpfHistory7 = hpfHistory7Next;
 hpfHistory8 = hpfHistory8Next;
-hpfHistory9 = hpfHistory9Next;
-hpfHistory10 = hpfHistory10Next;
-hpfHistory11 = hpfHistory11Next;
-hpfHistory12 = hpfHistory12Next;
-hpfHistory13 = hpfHistory13Next;
-hpfHistory14 = hpfHistory14Next;
-hpfHistory15 = hpfHistory15Next;
-hpfHistory16 = hpfHistory16Next;
 
 // Historias de orden de filtros
 hpfOrderHistory = hpfOrderHistoryNext;

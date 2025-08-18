@@ -47,7 +47,6 @@ History reductionHistRight(0);
 // CONSTANTES
 SMOOTH_HISTORY_FACTOR = 0.999;
 SMOOTH_PARAM_FACTOR = 0.001;
-AUTO_MAKEUP_FACTOR = -0.7;             // Factor de compensación automática de ganancia
 
 // =============================================================================
 // SMOOTHING DE PARÁMETROS
@@ -112,50 +111,36 @@ makeupLinear = dbtoa(finalMakeupDbWithDelta);
 leftWithMakeup = leftWithDelta * makeupLinear;
 rightWithMakeup = rightWithDelta * makeupLinear;
 
-// Sin compresión paralela - pasar directamente la señal procesada
-leftParallelMixed = leftWithMakeup;
-rightParallelMixed = rightWithMakeup;
+// WET-ONLY SOFTCLIP (antes del Dry/Wet)
+maxOutput = 0.989; // Limitar a -0.1 dBFS para dejar headroom
 
-// =============================================================================
+// Canal izquierdo (wet)
+wetInL = leftWithMakeup;
+wetSatL = (wetInL > 0) ? (tanh(wetInL * 1.2) * 0.833)
+                       : (tanh(wetInL * 0.8) * 1.25);
+wetSatL = clamp(wetSatL, -maxOutput, maxOutput);
+leftParallelMixed = mix(wetInL, wetSatL, effectiveSoftclip);
+
+// Canal derecho (wet)
+wetInR = rightWithMakeup;
+wetSatR = (wetInR > 0) ? (tanh(wetInR * 1.2) * 0.833)
+                       : (tanh(wetInR * 0.8) * 1.25);
+wetSatR = clamp(wetSatR, -maxOutput, maxOutput);
+rightParallelMixed = mix(wetInR, wetSatR, effectiveSoftclip);
+
 // DRY/WET MIX
-// =============================================================================
-leftDryWetMixed = mix(leftDelayedForMixing, leftParallelMixed, effectiveDryWetMix);
+leftDryWetMixed  = mix(leftDelayedForMixing,  leftParallelMixed,  effectiveDryWetMix);
 rightDryWetMixed = mix(rightDelayedForMixing, rightParallelMixed, effectiveDryWetMix);
 
 // Solo sidechain
-leftWithSidechain = mix(leftDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain);
+leftWithSidechain  = mix(leftDryWetMixed,  sidechainDelayedWrite, smoothSoloSidechain);
 rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain);
 
-// =============================================================================
-// SOFTCLIP - Saturación asimétrica
-// =============================================================================
-maxOutput = 0.989; // Limitar a -0.1 dBFS para dejar headroom
-
-// Canal izquierdo
-leftSaturated = 0;
-if(leftWithSidechain > 0) {
-    leftSaturated = tanh(leftWithSidechain * 1.2) * 0.833;
-} else {
-    leftSaturated = tanh(leftWithSidechain * 0.8) * 1.25;
-}
-leftSaturated = clamp(leftSaturated, -maxOutput, maxOutput);
-leftProcessedOutput = mix(leftWithSidechain, leftSaturated, effectiveSoftclip);
-
-// Canal derecho
-rightSaturated = 0;
-if(rightWithSidechain > 0) {
-    rightSaturated = tanh(rightWithSidechain * 1.2) * 0.833;
-} else {
-    rightSaturated = tanh(rightWithSidechain * 0.8) * 1.25;
-}
-rightSaturated = clamp(rightSaturated, -maxOutput, maxOutput);
-rightProcessedOutput = mix(rightWithSidechain, rightSaturated, effectiveSoftclip);
-
-// =============================================================================
-// BYPASS FINAL
-// =============================================================================
-leftFinalOutput = mix(leftDelayedForMixing, leftProcessedOutput, smoothBypassAmount);
-rightFinalOutput = mix(rightDelayedForMixing, rightProcessedOutput, smoothBypassAmount);
+// BYPASS FINAL + SALIDAS
+leftFinalOutput  = mix(leftDelayedForMixing,  leftWithSidechain,  smoothBypassAmount);
+rightFinalOutput = mix(rightDelayedForMixing, rightWithSidechain, smoothBypassAmount);
+out1 = fixdenorm(leftFinalOutput);
+out2 = fixdenorm(rightFinalOutput);
 
 // =============================================================================
 // SALIDAS

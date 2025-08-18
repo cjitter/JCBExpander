@@ -147,9 +147,19 @@ private:
             // Intentar obtener tooltip de la interfaz TooltipClient
             if (auto* client = dynamic_cast<juce::TooltipClient*>(comp))
             {
-                if (!comp->isCurrentlyBlockedByAnotherModalComponent())
+                // Verificar que el componente esté mostrando y no bloqueado
+                if (comp->isShowing() && !comp->isCurrentlyBlockedByAnotherModalComponent())
                 {
-                    showTip(client->getTooltip());
+                    // Proteger contra nullptr en getTooltip()
+                    auto tip = client->getTooltip();
+                    if (tip.isNotEmpty())
+                    {
+                        showTip(tip);
+                    }
+                    else
+                    {
+                        clearTip();
+                    }
                     return;
                 }
             }

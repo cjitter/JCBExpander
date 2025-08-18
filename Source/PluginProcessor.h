@@ -45,6 +45,7 @@ public:
     
     bool isBusesLayoutSupported(const juce::AudioProcessor::BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     
     //==============================================================================
     // Gestión del editor
@@ -247,6 +248,12 @@ private:
     
     // Valor de reducción de ganancia para hosts
     mutable std::atomic<float> currentGainReductionDb{0.0f};
+    
+public:
+    // Flag para indicar que el editor necesita actualización
+    std::atomic<bool> needsEditorUpdate{false};
+    
+private:
     mutable std::atomic<float> currentGainReductionLinear{1.0f};
     
     // Parámetro AAX de reducción de ganancia
@@ -288,6 +295,10 @@ private:
     ParameterState stateA;
     ParameterState stateB;
     bool isStateA{true};
+    
+    // Buffer de delay para processBlockBypassed
+    juce::AudioBuffer<float> bypassDelayBuffer;
+    int bypassDelayWritePos{0};
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JCBExpanderAudioProcessor)
