@@ -151,6 +151,9 @@ void JCBExpanderAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     m_PluginState->sr = sampleRate;
     m_PluginState->vs = samplesPerBlock;
     
+    // CRÍTICO: Reset Gen~ para sincronizar SR interno y redimensionar delays
+    JCBExpander::reset(m_PluginState);
+    
     // Pre-asignar buffers con tamaño máximo esperado para evitar allocations en audio thread
     // Usar un tamaño seguro que cubra la mayoría de casos (4096 samples es común máximo)
     const long maxExpectedBufferSize = juce::jmax(static_cast<long>(samplesPerBlock), 4096L);
@@ -170,10 +173,12 @@ void JCBExpanderAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     
     // Cálculo estándar: ms * (sampleRate / 1000)
     int latenciaSamples = static_cast<int>(latenciaMs * sampleRate / 1000.0);
-    latenciaSamples = juce::jmax(0, latenciaSamples);
+    
+    // Política de mínimo 1 muestra para cubrir el z^-1 de Gen~ cuando LA=0
+    latenciaSamples = juce::jmax(1, latenciaSamples);
 
-    // Aplicar Lookahead teniendo en cuenta el sample generado en gen~
-    setLatencySamples(latenciaSamples+1);
+    // Aplicar latencia reportada al host
+    setLatencySamples(latenciaSamples);
 
     // Initialize atomic meter values
     // CRITICAL: Changed from SmoothedValue to atomic - no reset() needed
@@ -1023,10 +1028,10 @@ void JCBExpanderAudioProcessor::parameterChanged(const juce::String& parameterID
             // Cálculo estándar de latencia: ms * (sampleRate / 1000)
             int latenciaSamples = static_cast<int>(newValue * sampleRate / 1000.0);
             
-            // Asegurar que nunca sea negativo
-            latenciaSamples = juce::jmax(0, latenciaSamples);
+            // Política de mínimo 1 muestra para cubrir el z^-1 de Gen~ cuando LA=0
+            latenciaSamples = juce::jmax(1, latenciaSamples);
             
-            setLatencySamples(latenciaSamples+1);
+            setLatencySamples(latenciaSamples);
             
             // Lookahead latency compensation updated
         }
