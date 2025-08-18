@@ -178,80 +178,17 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     // Configurar estados iniciales
     bool initialDeltaState = processor.apvts.getRawParameterValue("v_DELTA")->load() > 0.5f;
     parameterButtons.deltaButton.setButtonText("DELTA");  // Texto siempre igual
-    transferDisplay.setEnvelopeVisible(!initialDeltaState);  // Ocultar envolventes si DELTA está ON
-    // ELIMINADO: transferDisplay.setVisible(!initialDeltaState) - Mantener visible para mostrar histograma
+    
+    // Usar método centralizado para aplicar el modo Delta si está activo
     if (initialDeltaState) {
-        // Configurar medidores en modo delta
-        inputMeterL.setDeltaMode(true);
-        inputMeterR.setDeltaMode(true);
-        outputMeterL.setDeltaMode(true);
-        outputMeterR.setDeltaMode(true);
-        scMeterL.setDeltaMode(true);
-        scMeterR.setDeltaMode(true);
-        
-        // Atenuar medidores de entrada
-        inputMeterL.setAlpha(0.2f);
-        inputMeterR.setAlpha(0.2f);
-        scMeterL.setAlpha(0.2f);
-        scMeterR.setAlpha(0.2f);
-        
-        // Atenuar sliders de trim
-        trimSlider.setAlpha(0.2f);
-        scTrimSlider.setAlpha(0.2f);
-        
-        // Activar modo DELTA en TransferFunctionDisplay
-        transferDisplay.setDeltaMode(true);
+        applyDeltaModeToAllControls(true);
         
         // Establecer fondo delta si está activo
         if (deltaBackground.isValid()) {
             backgroundImage.setImage(deltaBackground, juce::RectanglePlacement::stretchToFit);
         }
-        
-        // Deshabilitar diagram cuando DELTA está activo al inicio
-        centerButtons.diagramButton.setEnabled(false);
-        centerButtons.diagramButton.setAlpha(0.25f);
-        
-        // Deshabilitar otros controles cuando DELTA está activo al inicio
-        // Presets
-        presetArea.saveButton.setEnabled(false);
-        presetArea.saveButton.setAlpha(0.25f);
-        presetArea.saveAsButton.setEnabled(false);
-        presetArea.saveAsButton.setAlpha(0.25f);
-        presetArea.deleteButton.setEnabled(false);
-        presetArea.deleteButton.setAlpha(0.25f);
-        presetArea.backButton.setEnabled(false);
-        presetArea.backButton.setAlpha(0.25f);
-        presetArea.nextButton.setEnabled(false);
-        presetArea.nextButton.setAlpha(0.25f);
-        presetArea.presetMenu.setEnabled(false);
-        presetArea.presetMenu.setAlpha(0.25f);
-        
-        // UNDO/REDO
-        utilityButtons.undoButton.setEnabled(false);
-        utilityButtons.undoButton.setAlpha(0.15f);  // Dimear más fuerte
-        utilityButtons.redoButton.setEnabled(false);
-        utilityButtons.redoButton.setAlpha(0.15f);  // Dimear más fuerte
-        
-        // A/B y copiar
-        topButtons.abStateButton.setEnabled(false);
-        topButtons.abStateButton.setAlpha(0.15f);  // Dimear más fuerte
-        topButtons.abCopyButton.setEnabled(false);
-        topButtons.abCopyButton.setAlpha(0.15f);  // Dimear más fuerte
-        
-        // SOLO SC
-        sidechainControls.soloScButton.setEnabled(false);
-        // SOLO SC siempre con alpha 1.0
-        
-        // Botones TODO
-        utilityButtons.hqButton.setAlpha(0.25f);
-        utilityButtons.dualMonoButton.setAlpha(0.25f);
-        utilityButtons.stereoLinkedButton.setAlpha(0.25f);
-        utilityButtons.msButton.setAlpha(0.25f);
-        utilityButtons.midiLearnButton.setAlpha(0.25f);
-        
-        // BYPASS
-        parameterButtons.bypassButton.setEnabled(false);
-        parameterButtons.bypassButton.setAlpha(0.25f);
+    } else {
+        transferDisplay.setEnvelopeVisible(true);
     }
     
     updateButtonStates();
@@ -1003,27 +940,8 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
     // Manejador del botón CODE removido - funcionalidad manejada por botón DIAGRAM
     else if (button == &parameterButtons.deltaButton)
     {
-        if (parameterButtons.deltaButton.getToggleState()) {
-            // DELTA desactiva BYPASS, SOLO SC y DIAGRAM
-            parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
-            sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
-            if (centerButtons.diagramButton.getToggleState()) {
-                centerButtons.diagramButton.setToggleState(false, juce::dontSendNotification);
-                hideDiagram(); // Cerrar DIAGRAM si está abierto
-            }
-            
-            // Activar modo DELTA en display
-            transferDisplay.setDeltaMode(true);
-            transferDisplay.setEnvelopeVisible(false);  // Ocultar envolventes cuando DELTA ON
-            // ELIMINADO: setVisible(false) - Mantener visible para mostrar histograma
-        } else {
-            // Desactivar modo DELTA en display
-            transferDisplay.setDeltaMode(false);
-            transferDisplay.setEnvelopeVisible(true);   // Mostrar envolventes cuando DELTA OFF
-            // ELIMINADO: setVisible(true) - Ya está visible
-        }
-        
-        updateButtonStates();
+        bool deltaActive = parameterButtons.deltaButton.getToggleState();
+        applyDeltaModeToAllControls(deltaActive);
     }
 }
 
@@ -2383,6 +2301,71 @@ void JCBExpanderAudioProcessorEditor::updateMeterStates()
     // Actualizar gradiente de salida para modo bypass
     outputMeterL.setBypassMode(bypassActive);
     outputMeterR.setBypassMode(bypassActive);
+}
+
+void JCBExpanderAudioProcessorEditor::applyDeltaModeToAllControls(bool deltaActive)
+{
+    // IMPORTANTE: Mantener TODOS los componentes habilitados
+    // Solo cambiar aspectos visuales (colores de medidores y display)
+    
+    if (deltaActive) {
+        // DELTA desactiva BYPASS, SOLO SC y DIAGRAM (cambio de estado, no deshabilitación)
+        parameterButtons.bypassButton.setToggleState(false, juce::sendNotification);
+        sidechainControls.soloScButton.setToggleState(false, juce::sendNotification);
+        if (centerButtons.diagramButton.getToggleState()) {
+            centerButtons.diagramButton.setToggleState(false, juce::dontSendNotification);
+            hideDiagram();
+        }
+        
+        // Cambiar medidores a modo delta (gradiente verde)
+        inputMeterL.setDeltaMode(true);
+        inputMeterR.setDeltaMode(true);
+        outputMeterL.setDeltaMode(true);
+        outputMeterR.setDeltaMode(true);
+        scMeterL.setDeltaMode(true);
+        scMeterR.setDeltaMode(true);
+        grMeter.setDeltaMode(true);
+        
+        // Atenuar medidores de entrada (efecto visual opcional)
+        inputMeterL.setAlpha(0.2f);
+        inputMeterR.setAlpha(0.2f);
+        scMeterL.setAlpha(0.2f);
+        scMeterR.setAlpha(0.2f);
+        
+        // Atenuar solo el slider de sidechain trim
+        scTrimSlider.setAlpha(0.2f);
+        
+        // Activar modo delta en display
+        transferDisplay.setDeltaMode(true);
+        // Mantener envelope visible para que se sigan actualizando los datos
+        transferDisplay.setEnvelopeVisible(true);
+    }
+    else {
+        // Restaurar todo a normal
+        inputMeterL.setDeltaMode(false);
+        inputMeterR.setDeltaMode(false);
+        outputMeterL.setDeltaMode(false);
+        outputMeterR.setDeltaMode(false);
+        scMeterL.setDeltaMode(false);
+        scMeterR.setDeltaMode(false);
+        grMeter.setDeltaMode(false);
+        
+        // Restaurar alpha normal
+        inputMeterL.setAlpha(1.0f);
+        inputMeterR.setAlpha(1.0f);
+        scMeterL.setAlpha(1.0f);
+        scMeterR.setAlpha(1.0f);
+        
+        // Restaurar alpha de sidechain trim basado en EXT KEY
+        bool extKeyActive = sidechainControls.keyButton.getToggleState();
+        scTrimSlider.setAlpha(extKeyActive ? 1.0f : 0.25f);
+        
+        // Desactivar modo delta en display
+        transferDisplay.setDeltaMode(false);
+        transferDisplay.setEnvelopeVisible(true);
+    }
+    
+    updateButtonStates();
 }
 
 void JCBExpanderAudioProcessorEditor::updateTransferDisplay()

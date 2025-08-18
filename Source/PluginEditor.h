@@ -819,6 +819,9 @@ private:
     void updateMeters();
     void updateSliderValues();
     
+    // Método para manejo del modo Delta
+    void applyDeltaModeToAllControls(bool deltaActive);
+    
     //==========================================================================
     // MÉTODOS HELPER DE UI
     //==========================================================================
