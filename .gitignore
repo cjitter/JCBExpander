@@ -30,3 +30,5 @@ JUCE_ASSERTIONS_RESUELTOS.md
 PRESET_COMBOBOX_ANALYSIS.md
 Assets/code/GenExpr_feedback0_reorder.patch
 PROCESSBLOCK_BYPASSED_ASYNCUPDATER_SOLUTION.md
+JCBExpander_Preset_System_Implementation.md
+JUCE_Gen_Bypass_Lookahead_Integration_Guide.md
