@@ -134,7 +134,7 @@ juce_add_binary_data(JCBExpander_BinaryData
         Assets/code/GainCalc.txt
         Assets/code/Output.txt
         # Presets de fábrica
-        Assets/FactoryPresets/LoopRedux.preset
+        Assets/FactoryPresets/Fx_LoopRedux.preset
 )
 
 # Linkear binary data al plugin

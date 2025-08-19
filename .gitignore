@@ -28,3 +28,5 @@ JCB_Delta_Mode_Fix.md
 JCB_Latency_Lookahead_Study.md
 JUCE_ASSERTIONS_RESUELTOS.md
 PRESET_COMBOBOX_ANALYSIS.md
+Assets/code/GenExpr_feedback0_reorder.patch
+PROCESSBLOCK_BYPASSED_ASYNCUPDATER_SOLUTION.md

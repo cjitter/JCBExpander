@@ -146,7 +146,10 @@ bool CustomComboBox::hitTest(int x, int y)
 void CustomComboBox::addItem(const juce::String& text, int itemId)
 {
     // Asegurar que nunca se añade string vacío
-    items.add({ text.isNotEmpty() ? text : "-", itemId });
+    Item newItem;
+    newItem.text = text.isNotEmpty() ? text : "-";
+    newItem.id = itemId;
+    items.add(newItem);
 }
 
 void CustomComboBox::addItemList(const juce::StringArray& itemsToAdd, int firstId)
@@ -155,6 +158,26 @@ void CustomComboBox::addItemList(const juce::StringArray& itemsToAdd, int firstI
     {
         addItem(itemsToAdd[i], firstId + i);
     }
+}
+
+void CustomComboBox::addCategoryItem(const juce::String& categoryName, 
+                                    const juce::StringArray& subItems, 
+                                    int startId)
+{
+    Item item;
+    item.text = categoryName;
+    item.id = startId;
+    item.isCategory = true;
+    item.isSeparator = false;
+    item.subItems = subItems;
+    
+    // Crear IDs para subitems
+    for (int i = 0; i < subItems.size(); ++i)
+    {
+        item.subItemIds.push_back(startId + i + 1);
+    }
+    
+    items.add(item);
 }
 
 void CustomComboBox::clear()
@@ -202,10 +225,25 @@ int CustomComboBox::getItemId(int index) const
 
 juce::String CustomComboBox::getText() const
 {
+    // Primero buscar en items principales
     for (const auto& item : items)
     {
         if (item.id == selectedId)
             return item.text;
+            
+        // Si es una categoría, buscar en sus subitems
+        if (item.isCategory)
+        {
+            for (size_t i = 0; i < item.subItemIds.size(); ++i)
+            {
+                if (item.subItemIds[i] == selectedId)
+                {
+                    // Retornar el texto del subitem
+                    if (i < static_cast<size_t>(item.subItems.size()))
+                        return item.subItems[i];
+                }
+            }
+        }
     }
     return {};
 }
@@ -443,9 +481,26 @@ void CustomComboBox::PopupWindow::ListContainer::paint(juce::Graphics& g)
         // Texto del item
         g.setColour(DarkTheme::textPrimary);
         g.setFont(juce::Font(juce::FontOptions(14.0f)));
-        g.drawFittedText(popupWindow.comboBox.items[i].text, 
-                        itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
-                        juce::Justification::centredLeft, 1);
+        
+        // Si es categoría, dibujar con indicador ">"
+        if (popupWindow.comboBox.items[i].isCategory)
+        {
+            auto textBounds = itemBounds.reduced(8.0f, 2.0f);
+            g.drawFittedText(popupWindow.comboBox.items[i].text, 
+                           textBounds.toNearestInt(),
+                           juce::Justification::centredLeft, 1);
+            
+            // Dibujar indicador ">" a la derecha
+            g.drawText(">", 
+                      textBounds.toNearestInt(),
+                      juce::Justification::centredRight, false);
+        }
+        else
+        {
+            g.drawFittedText(popupWindow.comboBox.items[i].text, 
+                           itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
+                           juce::Justification::centredLeft, 1);
+        }
     }
 }
 
@@ -471,6 +526,60 @@ void CustomComboBox::PopupWindow::ListContainer::mouseMove(const juce::MouseEven
         {
             popupWindow.hoveredItem = newHoveredItem;
             repaint();
+            
+            // Si el nuevo item hovereado es una categoría, mostrar su submenú
+            const auto& item = popupWindow.comboBox.items[newHoveredItem];
+            if (item.isCategory && !item.subItems.isEmpty())
+            {
+                // Ocultar submenú anterior si existe
+                if (popupWindow.activeSubMenu != nullptr)
+                {
+                    if (auto* parent = popupWindow.activeSubMenu->getParentComponent())
+                        parent->removeChildComponent(popupWindow.activeSubMenu.get());
+                    popupWindow.activeSubMenu.reset();
+                }
+                
+                // Crear nuevo submenú
+                popupWindow.activeSubMenu = std::make_unique<PopupWindow::SubMenu>(popupWindow, 
+                                                                      item.subItems, 
+                                                                      item.subItemIds);
+                
+                // Calcular posición del submenú (a la derecha del item de categoría)
+                auto itemBounds = juce::Rectangle<int>(0, newHoveredItem * itemHeight, 
+                                                       getWidth(), itemHeight);
+                
+                // Posicionar el submenú a la derecha del popup principal
+                auto subMenuWidth = 150;
+                auto subMenuHeight = juce::jmin(item.subItems.size() * itemHeight, 200);
+                
+                // Obtener el componente de nivel superior para añadir el submenú
+                if (auto* topLevel = getTopLevelComponent())
+                {
+                    // Calcular posición global del item de categoría
+                    auto globalPos = localPointToGlobal(itemBounds.getTopRight());
+                    auto topLevelPos = topLevel->getLocalPoint(nullptr, globalPos);
+                    
+                    popupWindow.activeSubMenu->setBounds(topLevelPos.x + 5,
+                                                         topLevelPos.y,
+                                                         subMenuWidth,
+                                                         subMenuHeight);
+                    
+                    topLevel->addAndMakeVisible(popupWindow.activeSubMenu.get());
+                }
+                
+                popupWindow.hoveredCategoryIndex = newHoveredItem;
+            }
+            else if (!item.isCategory)
+            {
+                // Si no es categoría, ocultar cualquier submenú activo
+                if (popupWindow.activeSubMenu != nullptr)
+                {
+                    if (auto* parent = popupWindow.activeSubMenu->getParentComponent())
+                        parent->removeChildComponent(popupWindow.activeSubMenu.get());
+                    popupWindow.activeSubMenu.reset();
+                    popupWindow.hoveredCategoryIndex = -1;
+                }
+            }
         }
     }
 }
@@ -533,4 +642,89 @@ void CustomComboBox::MouseInterceptor::mouseDown(const juce::MouseEvent& event)
     
     // Si llegamos aquí, el click fue fuera del combobox y del popup
     comboBox.hidePopup();
+}
+
+//==============================================================================
+// IMPLEMENTACIÓN DE SUBMENU
+//==============================================================================
+
+CustomComboBox::PopupWindow::SubMenu::SubMenu(PopupWindow& parent, 
+                                              const juce::StringArray& items, 
+                                              const std::vector<int>& ids)
+    : parentWindow(parent), subItems(items), subItemIds(ids)
+{
+    setAlwaysOnTop(true);
+    setWantsKeyboardFocus(false);
+}
+
+void CustomComboBox::PopupWindow::SubMenu::paint(juce::Graphics& g)
+{
+    // Fondo con el mismo estilo que el popup principal
+    g.setColour(DarkTheme::backgroundMedium.overlaidWith(DarkTheme::accentSecondary.withAlpha(0.1f)).withAlpha(0.9f));
+    g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
+    
+    // Borde
+    g.setColour(DarkTheme::accent.withAlpha(0.4f));
+    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 4.0f, 1.0f);
+    
+    // Dibujar items
+    auto itemHeight = 22;
+    for (int i = 0; i < subItems.size(); ++i)
+    {
+        auto itemBounds = juce::Rectangle<float>(0.0f, 
+                                                  static_cast<float>(i * itemHeight), 
+                                                  static_cast<float>(getWidth()), 
+                                                  static_cast<float>(itemHeight));
+        
+        // Highlight si está hovering
+        if (i == hoveredIndex)
+        {
+            g.setColour(DarkTheme::accent.withAlpha(0.3f));
+            g.fillRect(itemBounds);
+        }
+        
+        // Highlight si está seleccionado
+        if (subItemIds[static_cast<size_t>(i)] == parentWindow.comboBox.selectedId)
+        {
+            g.setColour(DarkTheme::accent.withAlpha(0.2f));
+            g.fillRect(itemBounds);
+        }
+        
+        // Texto del item
+        g.setColour(DarkTheme::textPrimary);
+        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.drawFittedText(subItems[i], 
+                        itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
+                        juce::Justification::centredLeft, 1);
+    }
+}
+
+void CustomComboBox::PopupWindow::SubMenu::mouseDown(const juce::MouseEvent& event)
+{
+    const int itemHeight = 22;
+    int clickedIndex = event.y / itemHeight;
+    
+    if (clickedIndex >= 0 && clickedIndex < subItems.size())
+    {
+        // Obtener el ID del item seleccionado
+        int selectedItemId = subItemIds[static_cast<size_t>(clickedIndex)];
+        
+        // Seleccionar el item en el combo principal
+        parentWindow.comboBox.selectItem(selectedItemId);
+    }
+}
+
+void CustomComboBox::PopupWindow::SubMenu::mouseMove(const juce::MouseEvent& event)
+{
+    const int itemHeight = 22;
+    int newHoveredIndex = event.y / itemHeight;
+    
+    if (newHoveredIndex >= 0 && newHoveredIndex < subItems.size())
+    {
+        if (hoveredIndex != newHoveredIndex)
+        {
+            hoveredIndex = newHoveredIndex;
+            repaint();
+        }
+    }
 }

@@ -18,6 +18,7 @@
 #include <mutex>
 #include <vector>
 #include <unordered_map>
+#include <atomic>
 
 // Archivos del proyecto
 #include "JCBExpander.h"
@@ -30,7 +31,8 @@ using namespace juce;
 //==============================================================================
 class JCBExpanderAudioProcessor : public juce::AudioProcessor,
                                     public juce::AudioProcessorValueTreeState::Listener,
-                                    private juce::Timer
+                                    private juce::Timer,
+                                    private juce::AsyncUpdater
 {
 public:
     //==============================================================================
@@ -186,7 +188,8 @@ private:
     // Actualizaciones de medidores
     void updateInputMeters(const juce::AudioBuffer<float>& buffer);
     void updateOutputMeters(const juce::AudioBuffer<float>& buffer);
-    void updateGainReductionMeter();
+    //void updateGainReductionMeter();
+    void updateGainReductionMeter(int numSamples);
     void updateSidechainMeters(const juce::AudioBuffer<float>& buffer);
     void captureInputWaveformData(const juce::AudioBuffer<float>& inputBuffer, int numSamples);
     void captureOutputWaveformData(int numSamples);
@@ -254,6 +257,8 @@ public:
     std::atomic<bool> needsEditorUpdate{false};
     
 private:
+    juce::SpinLock bypassDelayLock; // protege bypassDelayBuffer y bypassDelayWritePos
+
     mutable std::atomic<float> currentGainReductionLinear{1.0f};
     
     // Parámetro AAX de reducción de ganancia
@@ -296,9 +301,44 @@ private:
     ParameterState stateB;
     bool isStateA{true};
     
-    // Buffer de delay para processBlockBypassed
+    // ---- BYPASS COMPENSADO ----
     juce::AudioBuffer<float> bypassDelayBuffer;
-    int bypassDelayWritePos{0};
+    int bypassDelayWritePos { 0 };
+    
+    // ---- LATENCIA SEGURA (message thread) ----
+    std::atomic<int> pendingLatency { -1 };
+    int currentLatency = 0;
+
+    // ---- LOOKAHEAD DEBOUNCE (evitar desincronías al mover n_LOOKAHEAD) ----
+    std::atomic<float>   stagedLookaheadMs { 0.0f };  // último valor (ms) que el usuario pidió
+    std::atomic<uint32_t> lastLAChangeMs   { 0 };     // timestamp (ms) del último cambio
+    std::atomic<bool>    laCommitPending   { false }; // hay commit pendiente de aplicar
+    int                  laDebounceMs      { 140 };   // ventana de inactividad antes de aplicar (ms)
+
+    std::atomic<int> intrinsicGenOffset { 0 }; // 0 si Gen no añade +1; 1 si sí
+    // Helper: calcula latencia en muestras a partir del parámetro n_LOOKAHEAD (ms)
+    int computeLatencySamples (double sr) const
+    {
+        // Salvaguardas por si el host envía valores inválidos
+        if (sr <= 0.0)
+            return 0;
+
+        float latMs = apvts.getRawParameterValue("n_LOOKAHEAD")->load();
+        if (! std::isfinite(latMs) || latMs < 0.0f)
+            latMs = 0.0f;
+
+        const int base = juce::roundToInt (latMs * sr / 1000.0);
+        return juce::jmax (0, base + intrinsicGenOffset.load(std::memory_order_relaxed));
+    }
+    //int computeLatencySamples (double sr) const
+    //{
+    //    const float latMs = apvts.getRawParameterValue("n_LOOKAHEAD")->load();
+    //    int smp = juce::roundToInt (latMs * sr / 1000.0);
+    //    return juce::jmax (1, smp); // mínimo 1 muestra por z^-1 de gen~
+    //}
+    
+    // Override de AsyncUpdater
+    void handleAsyncUpdate() override;
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JCBExpanderAudioProcessor)

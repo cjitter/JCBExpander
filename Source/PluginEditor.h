@@ -15,6 +15,7 @@
 
 // Librerías estándar C++
 #include <unordered_map>
+#include <map>
 
 // Archivos del proyecto
 #include "PluginProcessor.h"
@@ -949,6 +950,9 @@ private:
     // Listeners especializados
     std::unique_ptr<TransferFunctionParameterListener> transferFunctionListener;
     std::unique_ptr<DeltaParameterListener> deltaParameterListener;
+    
+    // Mapeo de IDs de menú a nombres de presets para el sistema jerárquico
+    std::map<int, juce::String> presetIdToNameMap;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JCBExpanderAudioProcessorEditor)
 };

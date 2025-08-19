@@ -1743,9 +1743,18 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
             ~LoadingGuard() { flag = false; }
         } guard(isLoadingPreset);
         
-        // NOTA: El historial de undo se borrará al final para evitar grabar cambios de parámetros
-        
-        juce::String presetName = presetArea.presetMenu.getItemText(selectedId - 1);
+        // Buscar el nombre real del preset usando el mapeo
+        juce::String presetName;
+        if (presetIdToNameMap.find(selectedId) != presetIdToNameMap.end()) {
+            presetName = presetIdToNameMap[selectedId];
+        } else {
+            // Si no está en el mapeo, intentar obtenerlo del texto del menú (fallback)
+            presetName = presetArea.presetMenu.getText();
+            if (presetName.isEmpty()) {
+                presetArea.presetMenu.setSelectedId(0);
+                return;
+            }
+        }
         
         // Ignorar separadores
         if (presetName.startsWith("---")) {
@@ -1897,19 +1906,19 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
                 }
             }
         } 
-        else if (presetName.startsWith("[F] ")) {
-            // Es un factory preset - cargar desde BinaryData
-            juce::String factoryPresetName = presetName.substring(4); // Quitar "[F] "
-            
-            // Convertir el nombre a formato de recurso BinaryData
-            juce::String resourceName = factoryPresetName.replace(" ", "_") + "_preset";
+        else if (presetName.startsWith("Drums_") || presetName.startsWith("Voces_") || 
+                 presetName.startsWith("Fx_") || presetName.startsWith("Synth_") || 
+                 presetName.startsWith("General_")) {
+            // Es un factory preset con prefijo de categoría - cargar desde BinaryData
+            juce::String resourceName = presetName + "_preset";
             
             // Buscar el recurso en BinaryData
             for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
                 if (resourceName == BinaryData::namedResourceList[i]) {
                     // Cargar el preset desde BinaryData
                     int dataSize = 0;
-                    const char* data = BinaryData::getNamedResource(BinaryData::namedResourceList[i], dataSize);
+                    const char* data = BinaryData::getNamedResource(
+                        BinaryData::namedResourceList[i], dataSize);
                     
                     if (data != nullptr && dataSize > 0) {
                         // Parsear el XML desde memoria
@@ -1917,10 +1926,11 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
                         juce::XmlDocument xmlDoc(xmlContent);
                         std::unique_ptr<juce::XmlElement> xmlState(xmlDoc.getDocumentElement());
                         
-                        if (xmlState != nullptr && xmlState->hasTagName(processor.apvts.state.getType())) {
+                        if (xmlState != nullptr && 
+                            xmlState->hasTagName(processor.apvts.state.getType())) {
                             processor.apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
                             
-                            // Resetear parámetros momentáneos directamente (como JCBCompressor)
+                            // Resetear parámetros momentáneos directamente
                             processor.apvts.getParameter("p_BYPASS")->setValueNotifyingHost(0.0f);
                             processor.apvts.getParameter("m_SOLOSC")->setValueNotifyingHost(0.0f);
                             processor.apvts.getParameter("v_DELTA")->setValueNotifyingHost(0.0f);
@@ -1951,7 +1961,22 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
         
         // Actualizar estado en processor
         processor.setLastPreset(selectedId);
-        processor.setPresetDisplayText(presetName);
+        
+        // Para mostrar en el menú, usar nombre limpio sin prefijos
+        juce::String displayName = presetName;
+        if (presetName.startsWith("Drums_")) {
+            displayName = "[F] " + presetName.substring(6).replace("_", " ");
+        } else if (presetName.startsWith("Voces_")) {
+            displayName = "[F] " + presetName.substring(6).replace("_", " ");
+        } else if (presetName.startsWith("Fx_")) {
+            displayName = "[F] " + presetName.substring(3).replace("_", " ");
+        } else if (presetName.startsWith("Synth_")) {
+            displayName = "[F] " + presetName.substring(6).replace("_", " ");
+        } else if (presetName.startsWith("General_")) {
+            displayName = "[F] " + presetName.substring(8).replace("_", " ");
+        }
+        
+        processor.setPresetDisplayText(displayName);
         processor.setPresetTextItalic(false);
         presetArea.presetMenu.setTextItalic(false);
         
@@ -2654,55 +2679,110 @@ juce::Array<juce::File> JCBExpanderAudioProcessorEditor::populatePresetFolder()
 void JCBExpanderAudioProcessorEditor::refreshPresetMenu()
 {
     presetArea.presetMenu.clear();
-    juce::StringArray presetNames;
+    presetIdToNameMap.clear();  // Limpiar mapeo anterior
     
     // Añadir DEFAULT como primer preset siempre
-    presetNames.add("DEFAULT");
+    presetArea.presetMenu.addItem("DEFAULT", 1);
+    presetIdToNameMap[1] = "DEFAULT";
     
-    // Añadir separador para factory presets
-    presetNames.add("--- Factory Presets ---");
+    // Añadir separador
+    presetArea.presetMenu.addItem("---", 2);
     
-    // Añadir factory presets desde BinaryData
-    juce::StringArray factoryPresetNames;
+    // Organizar factory presets por categoría
+    std::map<juce::String, juce::StringArray> categorizedPresets;
+    std::map<juce::String, juce::StringArray> categorizedFullNames;
+    int nextId = 100;
+    
+    // Procesar factory presets desde BinaryData
     for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
     {
         juce::String resourceName(BinaryData::namedResourceList[i]);
         
-        // Buscar archivos que terminen en "_preset" (los .preset se convierten a _preset en BinaryData)
+        // Buscar archivos que terminen en "_preset"
         if (resourceName.endsWith("_preset"))
         {
-            // Limpiar el nombre para mostrar
-            juce::String cleanName = resourceName.replace("_preset", "")
-                                               .replace("_", " ");
-            factoryPresetNames.add(cleanName);
+            juce::String cleanName = resourceName.replace("_preset", "");
+            
+            // Detectar categoría del prefijo
+            juce::String category = "General";
+            juce::String presetName = cleanName;
+            
+            if (cleanName.startsWith("Drums_"))
+            {
+                category = "Drums";
+                presetName = cleanName.substring(6).replace("_", " ");
+            }
+            else if (cleanName.startsWith("Voces_"))
+            {
+                category = "Voces";
+                presetName = cleanName.substring(6).replace("_", " ");
+            }
+            else if (cleanName.startsWith("Fx_"))
+            {
+                category = "Fx";
+                presetName = cleanName.substring(3).replace("_", " ");
+            }
+            else if (cleanName.startsWith("Synth_"))
+            {
+                category = "Synth";
+                presetName = cleanName.substring(6).replace("_", " ");
+            }
+            else if (cleanName.startsWith("General_"))
+            {
+                category = "General";
+                presetName = cleanName.substring(8).replace("_", " ");
+            }
+            
+            categorizedPresets[category].add("[F] " + presetName);
+            categorizedFullNames[category].add(cleanName);  // Guardar nombre completo con prefijo
         }
     }
     
-    // Ordenar factory presets alfabéticamente
-    factoryPresetNames.sort(true);
-    for (const auto& name : factoryPresetNames)
+    // Añadir categorías al menú
+    juce::StringArray categoryOrder = {"Drums", "Voces", "Fx", "Synth", "General"};
+    
+    for (const auto& category : categoryOrder)
     {
-        presetNames.add("[F] " + name);  // [F] indica Factory preset
+        if (categorizedPresets.find(category) != categorizedPresets.end())
+        {
+            auto& presets = categorizedPresets[category];
+            auto& fullNames = categorizedFullNames[category];
+            presets.sort(true);
+            fullNames.sort(true);
+            
+            // Añadir categoría con sus subitems
+            presetArea.presetMenu.addCategoryItem(category, presets, nextId);
+            
+            // Mapear IDs a nombres de presets
+            for (int j = 0; j < presets.size(); ++j)
+            {
+                int presetId = nextId + j + 1;  // +1 porque el ID de la categoría es nextId
+                presetIdToNameMap[presetId] = fullNames[j];  // Usar nombre completo con prefijo
+            }
+            
+            nextId += static_cast<int>(presets.size()) + 1;
+        }
     }
     
-    // Añadir separador para user presets
-    presetNames.add("--- User Presets ---");
+    // Añadir separador
+    presetArea.presetMenu.addItem("---", nextId++);
     
-    // Añadir los presets del disco (user presets)
+    // Añadir user presets
     juce::StringArray userPresets;
     for (int i = 0; i < getUpdatedNumPresets(); i++) {
         userPresets.add(populatePresetFolder()[i].getFileNameWithoutExtension());
     }
     
-    // Ordenar user presets alfabéticamente
     userPresets.sort(true);
-    presetNames.addArray(userPresets);
+    for (const auto& preset : userPresets)
+    {
+        presetArea.presetMenu.addItem(preset, nextId);
+        presetIdToNameMap[nextId] = preset;  // Mapear user presets también
+        nextId++;
+    }
     
-    // Añadir todos los items al menú
-    presetArea.presetMenu.addItemList(presetNames, 1);
-    
-    // Si había un preset seleccionado previamente, intentar restaurarlo
-    if (processor.getLastPreset() > 0 && processor.getLastPreset() <= presetNames.size()) {
+    // Restaurar selección previa si existe
+    if (processor.getLastPreset() > 0) {
         presetArea.presetMenu.setSelectedId(processor.getLastPreset());
     }
 }
