@@ -86,9 +86,6 @@ void CustomComboBox::paint(juce::Graphics& g)
         displayText = textWhenNothingSelected;
     if (items.isEmpty() && !textWhenNoChoicesAvailable.isEmpty())
         displayText = textWhenNoChoicesAvailable;
-    // Añadir fallback final
-    if (displayText.isEmpty())
-        displayText = "-";
         
     g.drawFittedText(displayText, textBounds.toNearestInt(), juce::Justification::centred, 1);
 }
@@ -149,6 +146,13 @@ void CustomComboBox::addItem(const juce::String& text, int itemId)
     Item newItem;
     newItem.text = text.isNotEmpty() ? text : "-";
     newItem.id = itemId;
+    
+    // Detectar si es un separador
+    if (text == "---" || text.startsWith("---"))
+    {
+        newItem.isSeparator = true;
+    }
+    
     items.add(newItem);
 }
 
@@ -279,6 +283,36 @@ void CustomComboBox::setTextItalic(bool shouldBeItalic)
 juce::String CustomComboBox::getTextWhenNothingSelected() const
 {
     return textWhenNothingSelected;
+}
+
+std::vector<int> CustomComboBox::getAllSelectableIds() const
+{
+    std::vector<int> selectableIds;
+    
+    // Recorrer todos los items
+    for (const auto& item : items)
+    {
+        // Si es un separador, saltarlo
+        if (item.isSeparator || item.text.startsWith("---"))
+            continue;
+            
+        // Si es una categoría, añadir sus sub-items
+        if (item.isCategory && !item.subItemIds.empty())
+        {
+            // Añadir todos los IDs de los sub-items
+            for (int subId : item.subItemIds)
+            {
+                selectableIds.push_back(subId);
+            }
+        }
+        // Si es un item normal (no categoría, no separador), añadir su ID
+        else if (!item.isCategory)
+        {
+            selectableIds.push_back(item.id);
+        }
+    }
+    
+    return selectableIds;
 }
 
 //==============================================================================
@@ -471,35 +505,46 @@ void CustomComboBox::PopupWindow::ListContainer::paint(juce::Graphics& g)
             g.fillRect(itemBounds);
         }
         
-        // Highlight si está seleccionado
-        if (popupWindow.comboBox.items[i].id == popupWindow.comboBox.selectedId)
+        // Highlight si está seleccionado (solo para items normales)
+        const auto& item = popupWindow.comboBox.items[i];
+        if (!item.isCategory && !item.isSeparator && item.id == popupWindow.comboBox.selectedId)
         {
             g.setColour(DarkTheme::accent.withAlpha(0.2f));
             g.fillRect(itemBounds);
         }
         
-        // Texto del item
-        g.setColour(DarkTheme::textPrimary);
-        g.setFont(juce::Font(juce::FontOptions(14.0f)));
-        
-        // Si es categoría, dibujar con indicador ">"
-        if (popupWindow.comboBox.items[i].isCategory)
+        // Dibujar según tipo de item
+        if (item.isSeparator)
         {
-            auto textBounds = itemBounds.reduced(8.0f, 2.0f);
-            g.drawFittedText(popupWindow.comboBox.items[i].text, 
-                           textBounds.toNearestInt(),
-                           juce::Justification::centredLeft, 1);
+            // Dibujar línea separadora
+            g.setColour(DarkTheme::textMuted.withAlpha(0.3f));
+            auto lineY = itemBounds.getCentreY();
+            g.drawLine(itemBounds.getX() + 10, lineY, itemBounds.getRight() - 10, lineY, 1.0f);
+        }
+        else if (item.isCategory)
+        {
+            // Dibujar categoría con flecha
+            g.setColour(DarkTheme::textPrimary);
+            g.setFont(juce::Font(juce::FontOptions(14.0f)).withStyle(juce::Font::bold));
+            g.drawFittedText(item.text, 
+                            itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
+                            juce::Justification::centredLeft, 1);
             
-            // Dibujar indicador ">" a la derecha
-            g.drawText(">", 
-                      textBounds.toNearestInt(),
-                      juce::Justification::centredRight, false);
+            // Dibujar flecha >
+            g.setColour(DarkTheme::textMuted);
+            g.setFont(juce::Font(juce::FontOptions(14.0f)));
+            g.drawFittedText(">", 
+                            itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
+                            juce::Justification::centredRight, 1);
         }
         else
         {
-            g.drawFittedText(popupWindow.comboBox.items[i].text, 
-                           itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
-                           juce::Justification::centredLeft, 1);
+            // Item normal
+            g.setColour(DarkTheme::textPrimary);
+            g.setFont(juce::Font(juce::FontOptions(14.0f)));
+            g.drawFittedText(item.text, 
+                            itemBounds.reduced(8.0f, 2.0f).toNearestInt(),
+                            juce::Justification::centredLeft, 1);
         }
     }
 }
@@ -511,7 +556,24 @@ void CustomComboBox::PopupWindow::ListContainer::mouseDown(const juce::MouseEven
     
     if (clickedItem >= 0 && clickedItem < popupWindow.comboBox.items.size())
     {
-        popupWindow.comboBox.selectItem(popupWindow.comboBox.items[clickedItem].id);
+        const auto& item = popupWindow.comboBox.items[clickedItem];
+        
+        // Si es una categoría, mostrar submenú en lugar de seleccionar
+        if (item.isCategory)
+        {
+            // El submenú se mostrará en mouseMove cuando detecte hover sobre categoría
+            // Aquí solo actualizamos el item hovereado para forzar la creación del submenú
+            if (popupWindow.hoveredItem != clickedItem)
+            {
+                popupWindow.hoveredItem = clickedItem;
+                repaint();
+            }
+        }
+        else if (!item.isSeparator)
+        {
+            // Solo seleccionar items normales (no categorías ni separadores)
+            popupWindow.comboBox.selectItem(item.id);
+        }
     }
 }
 
