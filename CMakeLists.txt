@@ -19,7 +19,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(JCBExpander VERSION 0.9.1)
+project(JCBExpander VERSION 0.9.2)
 
 # Configuración C++
 set(CMAKE_CXX_STANDARD 20)
@@ -69,7 +69,7 @@ juce_add_plugin(JCBExpander
         # Información básica del plugin
         PLUGIN_NAME "JCBExpander"
         PRODUCT_NAME "JCBExpander"
-        VERSION 0.9.1
+        VERSION 0.9.2
         DESCRIPTION "Stereo-linked feedforward compressor with external sidechain, parallel processing and lookahead"
 
         # Información de la empresa

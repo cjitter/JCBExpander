@@ -154,6 +154,10 @@ private:
                 editor->pendingKneeValue.store(newValue);
                 editor->hasUIUpdates.store(true);
             }
+            else if (parameterID == "y_RANGE") {
+                editor->pendingRangeValue.store(newValue);
+                editor->hasUIUpdates.store(true);
+            }
         }
         
         JCBExpanderAudioProcessorEditor* editor;
@@ -931,6 +935,7 @@ private:
     std::atomic<float> pendingThresholdValue{-1.0f};
     std::atomic<float> pendingRatioValue{-1.0f};
     std::atomic<float> pendingKneeValue{-1.0f};
+    std::atomic<float> pendingRangeValue{-1.0f};
     std::atomic<float> pendingDeltaValue{-1.0f};
     std::atomic<bool> hasUIUpdates{false};
     

@@ -68,9 +68,9 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     // Verificar si el host es Logic Pro
     juce::PluginHostType hostInfo;
     if (hostInfo.isLogic()) {
-        titleText = "v0.9.1 beta";  // Solo versión para Logic Pro
+        titleText = "v0.9.2 beta";  // Solo versión para Logic Pro
     } else {
-        titleText = "JCBExpander v0.9.1 beta";  // Nombre completo para otros DAWs
+        titleText = "JCBExpander v0.9.2 beta";  // Nombre completo para otros DAWs
     }
     
     titleLink.setButtonText(titleText);
@@ -160,6 +160,7 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     processor.apvts.addParameterListener("b_THD", transferFunctionListener.get());
     processor.apvts.addParameterListener("c_RATIO", transferFunctionListener.get());
     processor.apvts.addParameterListener("q_KNEE", transferFunctionListener.get());
+    processor.apvts.addParameterListener("y_RANGE", transferFunctionListener.get());
     
     // Registrar listener separado para DELTA (como JCBCompressor)
     deltaParameterListener = std::make_unique<DeltaParameterListener>(this);
@@ -269,6 +270,7 @@ JCBExpanderAudioProcessorEditor::~JCBExpanderAudioProcessorEditor()
         processor.apvts.removeParameterListener("b_THD", transferFunctionListener.get());
         processor.apvts.removeParameterListener("c_RATIO", transferFunctionListener.get());
         processor.apvts.removeParameterListener("q_KNEE", transferFunctionListener.get());
+        processor.apvts.removeParameterListener("y_RANGE", transferFunctionListener.get());
     }
     
     if (deltaParameterListener)
@@ -560,8 +562,9 @@ void JCBExpanderAudioProcessorEditor::timerCallback()
         float thresholdValue = pendingThresholdValue.exchange(-1.0f);
         float ratioValue = pendingRatioValue.exchange(-1.0f);
         float kneeValue = pendingKneeValue.exchange(-1.0f);
+        float rangeValue = pendingRangeValue.exchange(-1.0f);
         
-        if (thresholdValue >= 0.0f || ratioValue >= 0.0f || kneeValue >= 0.0f) {
+        if (thresholdValue >= 0.0f || ratioValue >= 0.0f || kneeValue >= 0.0f || rangeValue >= 0.0f) {
             updateTransferDisplay();
         }
     }
@@ -2047,6 +2050,9 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
         if (auto* kneeParam = processor.apvts.getRawParameterValue("q_KNEE")) {
             transferDisplay.setKnee(kneeParam->load());
         }
+        if (auto* rangeParam = processor.apvts.getRawParameterValue("y_RANGE")) {
+            transferDisplay.setRange(rangeParam->load());
+        }
         updateTransferDisplay();
         
         // Borrar el historial de undos DESPUÉS de haber establecido todos los valores.
@@ -2526,6 +2532,7 @@ void JCBExpanderAudioProcessorEditor::updateTransferDisplay()
     transferDisplay.setThreshold(thresholdDB);
     transferDisplay.setRatio(leftTopKnobs.ratioSlider.getValue());
     transferDisplay.setKnee(leftTopKnobs.kneeSlider.getValue());
+    transferDisplay.setRange(rightTopControls.rangeSlider.getValue());
     
     // Actualizar estados de sidechain
     transferDisplay.setExtKeyActive(sidechainControls.keyButton.getToggleState());
@@ -3391,7 +3398,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     if (currentLanguage == TooltipLanguage::Spanish)
     {
         // Spanish tooltips - usar JUCE_UTF8 solo donde sea necesario para caracteres especiales
-        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.1 beta\nPlugin de audio open source\nClick para créditos");
+        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.2 beta\nPlugin de audio open source\nClick para créditos");
         if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la expansión\nSeñales bajo este nivel se expanden\nRango: -60 a 0 dB | Por defecto: -18 dB");
         if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 1:1 a 40:1 | Por defecto: 4:1");
         if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 1 dB");
@@ -3434,7 +3441,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     else
     {
         // English tooltips
-        if (key == "title") return "JCBExpander: audio expander v0.9.1 beta\nOpen source audio plugin\nClick for credits";
+        if (key == "title") return "JCBExpander: audio expander v0.9.2 beta\nOpen source audio plugin\nClick for credits";
         if (key == "thd") return "THRESHOLD: level where expansion begins\nSignals below this level are expanded\nRange: -60 to 0 dB | Default: -18 dB";
         if (key == "ratio") return "RATIO: amount of expansion applied\nInput/output relationship below threshold\nRange: 1:1 to 40:1 | Default: 4:1";
         if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 1 to 10 dB | Default: 1 dB";
