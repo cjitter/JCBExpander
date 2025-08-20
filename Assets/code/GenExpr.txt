@@ -300,8 +300,23 @@ smoothSoftclip = (softclipHistory * SMOOTH_HISTORY_FACTOR) + (u_SOFTCLIP * SMOOT
 softclipHistoryNext = fixdenorm(smoothSoftclip);
 
 // Lookahead Smoothing
-smoothLookahead = (lookaheadHistory * SMOOTH_HISTORY_FACTOR) + (n_LOOKAHEAD * SMOOTH_PARAM_FACTOR);
+//smoothLookahead = (lookaheadHistory * SMOOTH_HISTORY_FACTOR) + (n_LOOKAHEAD * SMOOTH_PARAM_FACTOR);
+//lookaheadHistoryNext = fixdenorm(smoothLookahead);
+
+// Lookahead sin suavizado (passthrough)
+smoothLookahead = n_LOOKAHEAD;
 lookaheadHistoryNext = fixdenorm(smoothLookahead);
+
+// ms -> samples cuantizado a ENTERO
+lookaheadSamples = round(mstosamps(smoothLookahead));
+
+// … y mantener read con step + write-before-read
+//leftDelayedForCompression  = leftOutputDelay.read(lookaheadSamples, interp="step");
+//rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
+//leftDelayedForMixing       = leftInputDelay.read(lookaheadSamples,  interp="step");
+//rightDelayedForMixing      = rightInputDelay.read(lookaheadSamples, interp="step");
+
+
 
 // =============================================================================
 // LOOKAHEAD DELAY SYSTEM - Sistema de delay predictivo
@@ -313,17 +328,9 @@ lookaheadHistoryNext = fixdenorm(smoothLookahead);
 // Convertir tiempo de lookahead (ms) a muestras
 lookaheadSamples = mstosamps(smoothLookahead);
 
-// Leer señales retrasadas para compresión (delayed audio)
-leftDelayedForCompression = leftOutputDelay.read(lookaheadSamples, interp="step");
-rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
-
-// Asignar salidas de medidores principales (señales que entran a la compresión)
-out4 = fixdenorm(leftDelayedForCompression);
-out5 = fixdenorm(rightDelayedForCompression);
-
-// Leer señales retrasadas para mezcla final (las escrituras se hacen más abajo después del trim)
-leftDelayedForMixing = leftInputDelay.read(lookaheadSamples, interp="step");
-rightDelayedForMixing = rightInputDelay.read(lookaheadSamples, interp="step");
+// NOTA: Las lecturas de los delays audibles se realizan más abajo,
+// después de escribir en los delays, para asegurar write-before-read
+// (equivalente práctico a feedback 0 y sin +1 muestra implícita).
 
 // =============================================================================
 // MAKEUP GAIN Y SIDECHAIN TAPS
@@ -378,11 +385,23 @@ trimGainLinear = dbtoa(smoothTrimGain);
 leftTrimmed = in1 * trimGainLinear;
 rightTrimmed = in2 * trimGainLinear;
 
-// Escribir señales en delays
-leftInputDelay.write(in1);          // Sin trim para bypass/dry
-rightInputDelay.write(in2);         // Sin trim para bypass/dry
-leftOutputDelay.write(leftTrimmed); // Con trim para compresión
-rightOutputDelay.write(rightTrimmed); // Con trim para compresión
+// Escribir señales en delays (WRITE FIRST → equivale a feedback 0)
+leftInputDelay.write(in1);            // DRY (para mezcla/bypass)
+rightInputDelay.write(in2);           // DRY (para mezcla/bypass)
+leftOutputDelay.write(leftTrimmed);   // WET (tras TRIM) para compresión
+rightOutputDelay.write(rightTrimmed); // WET (tras TRIM) para compresión
+
+// Ahora SÍ: leer señales retrasadas con write-before-read
+leftDelayedForCompression  = leftOutputDelay.read(lookaheadSamples, interp="step");
+rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
+
+// Medidores principales (señales que entran a la compresión)
+out4 = fixdenorm(leftDelayedForCompression);
+out5 = fixdenorm(rightDelayedForCompression);
+
+// Señales retrasadas para mezcla final
+leftDelayedForMixing  = leftInputDelay.read(lookaheadSamples, interp="step");
+rightDelayedForMixing = rightInputDelay.read(lookaheadSamples, interp="step");
 
 // Crear señal mono de entrada principal
 mainSignalMono = ((rightTrimmed + leftTrimmed)) * 0.707;  // Suma mono de entrada principal
