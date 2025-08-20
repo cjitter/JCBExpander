@@ -154,64 +154,45 @@ JCBExpanderAudioProcessor::~JCBExpanderAudioProcessor()
 //==============================================================================
 void JCBExpanderAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    // Configuración de canales en modo debug eliminada para release
-    
-    // Inicializar sample rate y vector size
+    // 1) Guardar SR/VS en el estado
     m_PluginState->sr = sampleRate;
     m_PluginState->vs = samplesPerBlock;
     
-    // CRÍTICO: Reset Gen~ para sincronizar SR interno y redimensionar delays
-    JCBExpander::reset(m_PluginState);
-    
-    // Pre-asignar buffers con tamaño máximo esperado para evitar allocations en audio thread
-    // Usar un tamaño seguro que cubra la mayoría de casos (4096 samples es común máximo)
+    // 2) Dimensionado de buffers propios
     const long maxExpectedBufferSize = juce::jmax(static_cast<long>(samplesPerBlock), 4096L);
     assureBufferSize(maxExpectedBufferSize);
     
-    // Pre-asignar vectors de waveform data para evitar resize en audio thread
     {
         std::lock_guard<std::mutex> lock(waveformMutex);
-        const size_t maxWaveformSize = static_cast<size_t>(maxExpectedBufferSize);
-        currentInputSamples.resize(maxWaveformSize);
-        currentProcessedSamples.resize(maxWaveformSize);
-        currentGainReductionSamples.resize(maxWaveformSize);
+        currentInputSamples.resize(static_cast<size_t>(maxExpectedBufferSize));
+        currentProcessedSamples.resize(static_cast<size_t>(maxExpectedBufferSize));
+        currentGainReductionSamples.resize(static_cast<size_t>(maxExpectedBufferSize));
     }
     
-    // Calcular latencia usando el helper
-    const int latenciaSamples = computeLatencySamples(sampleRate);
+    // 3) ***Clave***: sincroniza SR/VS con Gen y re-dimensiona sus delays/constantes
+    //    Esto asegura que Gen use el sampleRate real del host
+    JCBExpander::reset(m_PluginState);
     
-    // Reportar al host (válido en prepareToPlay)
-    setLatencySamples(latenciaSamples);
-    currentLatency = latenciaSamples; // copia coherente
-    
-    // Inicializar buffer de delay para processBlockBypassed
-    if (latenciaSamples > 0) {
-        bypassDelayBuffer.setSize(getTotalNumOutputChannels(), latenciaSamples);
-        bypassDelayBuffer.clear();
-        bypassDelayWritePos = 0;
-    } else {
-        bypassDelayBuffer.setSize(0, 0);
-        bypassDelayWritePos = 0;
+    // Cachear indices de gen para evitar bucles por nombre (si se usan frecuentemente)
+    genIdxLookahead = genIdxBypass = -1;
+    for (int i = 0; i < JCBExpander::num_params(); ++i)
+    {
+        const char* raw = JCBExpander::getparametername(m_PluginState, i);
+        juce::String name(raw ? raw : "");
+        if (name == "n_LOOKAHEAD") genIdxLookahead = i;
+        if (name == "p_BYPASS")    genIdxBypass = i;
     }
-
-    // Initialize atomic meter values
-    // CRITICAL: Changed from SmoothedValue to atomic - no reset() needed
-    leftInputRMS.store(-100.0f, std::memory_order_relaxed);
-    rightInputRMS.store(-100.0f, std::memory_order_relaxed);
     
-    leftOutputRMS.store(-100.0f, std::memory_order_relaxed);
-    rightOutputRMS.store(-100.0f, std::memory_order_relaxed);
+    // 4) Reinyectar TODOS los parámetros a Gen DESPUÉS del reset
+    for (int i = 0; i < JCBExpander::num_params(); i++)
+    {
+        const char* rawName = JCBExpander::getparametername(m_PluginState, i);
+        auto paramName = juce::String(rawName ? rawName : "");
+        if (auto* p = apvts.getRawParameterValue(paramName))
+            JCBExpander::setparameter(m_PluginState, i, p->load(), nullptr);
+    }
     
-    gainReduction.store(0.0f, std::memory_order_relaxed);
-    
-    // NUEVO: Resetear el promedio móvil cuando se reinicia la reproducción
-    // Esto asegura que el slider comience desde un estado limpio
-    grMovingAverage.reset();
-    
-    leftSC.store(-100.0f, std::memory_order_relaxed);
-    rightSC.store(-100.0f, std::memory_order_relaxed);
-    
-    // Configurar buffers auxiliares
+    // 5) Inicializar/limpiar buffers de trabajo
     grBuffer.setSize(getTotalNumOutputChannels(), samplesPerBlock);
     grBuffer.clear();
     
@@ -221,25 +202,56 @@ void JCBExpanderAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     sidechainBuffer.setSize(getTotalNumInputChannels(), samplesPerBlock);
     sidechainBuffer.clear();
     
-    // Inicializar buffers de forma de onda
-    currentInputSamples.resize(samplesPerBlock, 0.0f);
-    currentProcessedSamples.resize(samplesPerBlock, 0.0f);
+    currentInputSamples.resize(static_cast<size_t>(samplesPerBlock), 0.0f);
+    currentProcessedSamples.resize(static_cast<size_t>(samplesPerBlock), 0.0f);
     
-    // IMPORTANTE: Re-sincronizar todos los parámetros con Gen~ en prepareToPlay
-    // Esto asegura que los valores estén correctos cuando el DAW comienza a reproducir
-    for (int i = 0; i < JCBExpander::num_params(); i++)
+    // 6) Medidores/atomics
+    leftInputRMS.store(-100.0f, std::memory_order_relaxed);
+    rightInputRMS.store(-100.0f, std::memory_order_relaxed);
+    leftOutputRMS.store(-100.0f, std::memory_order_relaxed);
+    rightOutputRMS.store(-100.0f, std::memory_order_relaxed);
+    gainReduction.store(0.0f, std::memory_order_relaxed);
+    leftSC.store(-100.0f, std::memory_order_relaxed);
+    rightSC.store(-100.0f, std::memory_order_relaxed);
+    
+    // Resetear el promedio móvil
+    grMovingAverage.reset();
+    
+    // 7) Latencia reportada al host (coherente con Gen)
+    const int latenciaSamples = computeLatencySamples(sampleRate);
+    setLatencySamples(latenciaSamples);
+    currentLatency = latenciaSamples;
+    
+    // --- Reset estado de bypass & colas para primer bloque tras prepareToPlay ---
     {
-        const char* rawName = JCBExpander::getparametername(m_PluginState, i);
-        auto paramName = juce::String(rawName ? rawName : "");
-        if (auto* param = apvts.getRawParameterValue(paramName)) {
-            float value = param->load();
-            JCBExpander::setparameter(m_PluginState, i, value, nullptr);
-        }
+        wasHostBypassed = false;
+        bypassFadePos = -1;
+        lastWetTailLen = 0;
+        
+        // Inicializa la cola WET con un tamaño mínimo para evitar reallocs en el primer frame
+        // Recalcular canales con fallback defensivo
+        int chans = getTotalNumOutputChannels();
+        if (chans <= 0)
+            chans = juce::jmax(1, getMainBusNumOutputChannels()); // fallback raro, al menos 1
+        
+        const int tailN = juce::jmin(bypassFadeLen, samplesPerBlock > 0 ? samplesPerBlock : 1);
+        lastWetTail.setSize(chans, tailN);
+        lastWetTail.clear();
     }
-    // Coherencia inicial del lookahead (evitar commits espurios al arrancar)
-    if (auto* laParam = apvts.getRawParameterValue("n_LOOKAHEAD"))
-    {
-        stagedLookaheadMs.store(laParam->load(), std::memory_order_relaxed);
+    
+    // 8) Inicializar bypass buffer según latencia
+    if (latenciaSamples > 0) {
+        bypassDelayBuffer.setSize(getTotalNumOutputChannels(), latenciaSamples);
+        bypassDelayBuffer.clear();
+        bypassDelayWritePos = 0;
+    } else {
+        bypassDelayBuffer.setSize(0, 0);
+        bypassDelayWritePos = 0;
+    }
+    
+    // 9) Inicializar variables de debounce
+    if (auto* la = apvts.getRawParameterValue("n_LOOKAHEAD")) {
+        stagedLookaheadMs.store(la->load(), std::memory_order_relaxed);
         lastLAChangeMs.store(juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
         laCommitPending.store(false, std::memory_order_relaxed);
     }
@@ -252,9 +264,12 @@ void JCBExpanderAudioProcessor::releaseResources()
     trimInputBuffer.setSize(0, 0);
     sidechainBuffer.setSize(0, 0);
 
-    // Limpiar buffer de delay para bypass
-    bypassDelayBuffer.setSize(0, 0);
-    bypassDelayWritePos = 0;
+    // Limpiar bypass buffer con protección thread-safe
+    {
+        const juce::SpinLock::ScopedLockType sl(bypassDelayLock);
+        bypassDelayBuffer.setSize(0, 0);
+        bypassDelayWritePos = 0;
+    }
 }
 
 //==============================================================================
@@ -324,7 +339,6 @@ void JCBExpanderAudioProcessor::releaseResources()
 void JCBExpanderAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-
     const int numSamples = buffer.getNumSamples();
 
     // --- Ajuste de buffers dependientes del tamaño de bloque ---
@@ -343,6 +357,8 @@ void JCBExpanderAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     {
         sidechainBuffer.setSize(getTotalNumInputChannels(), numSamples, false, false, true);
     }
+
+    // Resize de waveform buffers con try_lock para evitar bloqueos
     {
         std::unique_lock<std::mutex> lock(waveformMutex, std::try_to_lock);
         if (lock.owns_lock())
@@ -395,6 +411,47 @@ void JCBExpanderAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     fillGenInputBuffers(buffer);
     processGenAudio(numSamples);
     fillOutputBuffers(buffer);
+    
+    // ---- Capturar cola WET para fade de Pro Tools ----
+    // Solo capturamos si NO estamos en bypass del host
+    // Esto permitirá hacer el crossfade cuando el host entre en bypass
+    {
+        const int numChannels = buffer.getNumChannels();
+        const int nRequested  = juce::jmin(bypassFadeLen, numSamples);
+        
+        // Si no hay nada que capturar, deja flags en estado coherente
+        if (nRequested <= 0 || numChannels <= 0)
+        {
+            lastWetTailLen = 0;
+            wasHostBypassed = false;
+            bypassFadePos = -1;
+        }
+        else
+        {
+            // Reajustar cola si cambian canales o longitud objetivo
+            if (lastWetTail.getNumChannels() != numChannels
+             || lastWetTail.getNumSamples()  != nRequested)
+            {
+                lastWetTail.setSize(numChannels, nRequested, false, false, true);
+                lastWetTail.clear();
+                lastWetTailLen = 0; // evita mezclar con cola antigua
+            }
+            
+            // Copiamos las ÚLTIMAS nRequested muestras del buffer ya procesado (wet)
+            const int srcOffset = numSamples - nRequested;
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                const float* src = buffer.getReadPointer(ch, srcOffset);
+                float*       dst = lastWetTail.getWritePointer(ch);
+                std::memcpy(dst, src, size_t(nRequested) * sizeof(float));
+            }
+            lastWetTailLen = nRequested;
+            
+            // Estado: este bloque estaba activo (no bypass)
+            wasHostBypassed = false;
+            bypassFadePos = -1; // por si usas acumulador en builds previas
+        }
+    }
 
     // Capturas post-DSP
     captureInputWaveformData(buffer, numSamples);
@@ -454,18 +511,20 @@ void JCBExpanderAudioProcessor::processBlockBypassed(juce::AudioBuffer<float>& b
                                                      juce::MidiBuffer& midi)
 {
     juce::ignoreUnused(midi);
-    juce::ScopedNoDenormals _;
+    juce::ScopedNoDenormals noDenormals;
 
     const int numSamples   = buffer.getNumSamples();
     const int numChannels  = buffer.getNumChannels();
     const int delaySamples = getLatencySamples(); // == currentLatency
 
+    // Si no hay latencia reportada, salimos: host usará el audio tal cual
     if (delaySamples <= 0)
         return;
 
-    // PROTEGIDO: garantizamos que no haya realojos concurrentes
+    // Protección thread-safe del buffer de delay
     const juce::SpinLock::ScopedLockType sl (bypassDelayLock);
 
+    // Redimensionar el buffer de delay si cambian canales/latencia
     if (bypassDelayBuffer.getNumSamples()  != delaySamples
      || bypassDelayBuffer.getNumChannels() != numChannels)
     {
@@ -474,21 +533,61 @@ void JCBExpanderAudioProcessor::processBlockBypassed(juce::AudioBuffer<float>& b
         bypassDelayWritePos = 0;
     }
 
+    // Buffer circular para alinear con la latencia reportada
     for (int i = 0; i < numSamples; ++i)
     {
         const int readPos = bypassDelayWritePos;
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
-            float* const out   = buffer.getWritePointer(ch);
-            float* const dline = bypassDelayBuffer.getWritePointer(ch);
+            float* out   = buffer.getWritePointer(ch);
+            float* dline = bypassDelayBuffer.getWritePointer(ch);
 
-            const float delayed = dline[readPos];
-            dline[readPos] = out[i];
-            out[i]         = delayed;
+            const float delayed = dline[readPos]; // muestra alineada
+            dline[readPos] = out[i];              // escribir muestra actual
+            out[i] = delayed;                     // salida = dry compensado
         }
 
         bypassDelayWritePos = (bypassDelayWritePos + 1) % delaySamples;
+    }
+    
+    // ---- Crossfade equal-power SOLO en el primer bloque tras entrar en bypass ----
+    const bool justEnteredBypass = !wasHostBypassed;
+    wasHostBypassed = true;
+    
+    // Adaptar fade dinámicamente (limitado a potencias de 2)
+    int rawFade = juce::jlimit(32, 192, buffer.getNumSamples());
+    
+    // Snap a la potencia de 2 más cercana (32, 64, 128, 192 como límites)
+    int targetFade = 64;
+    if (rawFade < 64)       targetFade = 32;
+    else if (rawFade < 128) targetFade = 64;
+    else if (rawFade < 192) targetFade = 128;
+    else                    targetFade = 192;
+    
+    if (bypassFadeLen != targetFade)
+        bypassFadeLen = targetFade;
+    
+    const int fadeLen = juce::jmin(bypassFadeLen, numSamples, lastWetTailLen);
+    
+    if (justEnteredBypass && fadeLen > 0)
+    {
+        const int tail0 = lastWetTailLen - fadeLen; // inicio en la cola WET guardada
+        
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float*       out  = buffer.getWritePointer(ch);     // DRY ya compensado
+            const float* tail = lastWetTail.getReadPointer(ch); // WET del bloque activo previo
+            
+            for (int n = 0; n < fadeLen; ++n)
+            {
+                const float w = 1.0f - float(n) / float(fadeLen);
+                const float a = std::sin(w * juce::MathConstants<float>::halfPi);
+                const float b = std::cos(w * juce::MathConstants<float>::halfPi);
+                
+                out[n] = a * tail[tail0 + n] + b * out[n];
+            }
+        }
     }
 }
 
@@ -1283,53 +1382,36 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
 //==============================================================================
 void JCBExpanderAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    if (isBeingDestroyed.load()) return;
-
-    // Validar valores mínimos para ATK y REL
-    if (parameterID == "d_ATK" && newValue < 0.1f) {
-        newValue = 0.1f;
-    }
-    if (parameterID == "e_REL" && newValue < 0.1f) {
-        newValue = 0.1f;
-    }
-
-    // Buscar el índice correcto en Gen~ basado en el nombre del parámetro
+    // Limites mínimos para ATK y REL
+    if (parameterID == "d_ATK" && newValue < 0.1f) newValue = 0.1f;
+    if (parameterID == "e_REL" && newValue < 0.1f) newValue = 0.1f;
+    
+    // Buscar índice en Gen por nombre
     int genIndex = -1;
-    for (int i = 0; i < JCBExpander::num_params(); i++) {
-        const char* rawName = JCBExpander::getparametername(m_PluginState, i);
-        if (parameterID == juce::String(rawName ? rawName : "")) {
-            genIndex = i;
-            break;
+    for (int i = 0; i < JCBExpander::num_params(); ++i) {
+        const char* raw = JCBExpander::getparametername(m_PluginState, i);
+        if (parameterID == juce::String(raw ? raw : "")) { 
+            genIndex = i; 
+            break; 
         }
     }
-
-    if (genIndex < 0) {
-        return;  // Parámetro no encontrado en Gen~
-    }
-
-    //JCBExpander::setparameter(m_PluginState, genIndex, newValue, nullptr);
-
-    // Actualizar latencia cuando cambia el lookahead (usando AsyncUpdater para thread safety)
-    /*if (parameterID == "n_LOOKAHEAD")
-    {
-        const int newL = computeLatencySamples(getSampleRate());
-        if (newL != pendingLatency.load(std::memory_order_relaxed)
-            && newL != currentLatency)
-        {
-            pendingLatency.store(newL, std::memory_order_relaxed);
-            triggerAsyncUpdate(); // message thread aplicará cambios
-        }
-    }*/
+    
+    if (genIndex < 0) return;
+    
+    // Debounce: NO aplicar lookahead de inmediato
     if (parameterID == "n_LOOKAHEAD")
     {
         stagedLookaheadMs.store(newValue, std::memory_order_relaxed);
         lastLAChangeMs.store(juce::Time::getMillisecondCounter(), std::memory_order_relaxed);
         laCommitPending.store(true, std::memory_order_release);
-        return; // Importante: NO llamar a setparameter aquí
+        return; // NO aplicar directo a Gen, se aplicará después del debounce
     }
-
-    // Resto de parámetros → aplicar de inmediato a Gen
+    
+    // Resto de parámetros → directo a Gen
     JCBExpander::setparameter(m_PluginState, genIndex, newValue, nullptr);
+    
+    // NO llamar MessageManager::callAsync desde aquí - puede ejecutarse en audio thread
+    // La actualización de UI se maneja desde el Timer del editor
 }
 
 /*void JCBExpanderAudioProcessor::handleAsyncUpdate()
@@ -1350,22 +1432,31 @@ void JCBExpanderAudioProcessor::parameterChanged(const juce::String& parameterID
 }*/
 void JCBExpanderAudioProcessor::handleAsyncUpdate()
 {
+    // Verificar si estamos siendo destruidos (opcional, para mayor seguridad)
     if (isBeingDestroyed.load()) return;
 
+    // Obtener la latencia pendiente y marcarla como procesada
     const int L = pendingLatency.exchange(-1, std::memory_order_acq_rel);
     if (L < 0 || L == currentLatency) return;
 
+    // Notificar al host y actualizar estado interno
+    setLatencySamples(L);
     currentLatency = L;
-    setLatencySamples(currentLatency);
+    
+    // Recalcular canales con fallback defensivo (por si el host cambia layout "a destiempo")
+    const int chans = juce::jmax(1, getTotalNumOutputChannels());
 
-    // PROTEGIDO: evitar que el audio thread lea mientras realojamos
-    const juce::SpinLock::ScopedLockType sl (bypassDelayLock);
-
-    if (currentLatency > 0) {
-        bypassDelayBuffer.setSize(getTotalNumOutputChannels(), currentLatency);
+    // Actualizar bypass buffer con protección thread-safe
+    const juce::SpinLock::ScopedLockType sl(bypassDelayLock);
+    
+    if (currentLatency > 0)
+    {
+        bypassDelayBuffer.setSize(chans, currentLatency);
         bypassDelayBuffer.clear();
         bypassDelayWritePos = 0;
-    } else {
+    }
+    else
+    {
         bypassDelayBuffer.setSize(0, 0);
         bypassDelayWritePos = 0;
     }

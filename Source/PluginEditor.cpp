@@ -136,20 +136,16 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     
     // Conectar callbacks del transfer display para actualizar knobs
     transferDisplay.onThresholdChange = [this](float newThreshold) {
-        leftTopKnobs.thdSlider.setValue(newThreshold, juce::dontSendNotification);
-        handleParameterChange();  // Marcar preset como modificado
+        leftTopKnobs.thdSlider.setValue(newThreshold, juce::sendNotificationSync);
     };
     transferDisplay.onRatioChange = [this](float newRatio) {
-        leftTopKnobs.ratioSlider.setValue(newRatio, juce::dontSendNotification);
-        handleParameterChange();  // Marcar preset como modificado
+        leftTopKnobs.ratioSlider.setValue(newRatio, juce::sendNotificationSync);
     };
     transferDisplay.onKneeChange = [this](float newKnee) {
-        leftTopKnobs.kneeSlider.setValue(newKnee, juce::dontSendNotification);
-        handleParameterChange();  // Marcar preset como modificado
+        leftTopKnobs.kneeSlider.setValue(newKnee, juce::sendNotificationSync);
     };
     transferDisplay.onRangeChange = [this](float newRange) {
-        rightTopControls.rangeSlider.setValue(newRange, juce::dontSendNotification);
-        handleParameterChange();  // Marcar preset como modificado
+        rightTopControls.rangeSlider.setValue(newRange, juce::sendNotificationSync);
     };
     
     // Updates iniciales
@@ -1031,6 +1027,11 @@ void JCBExpanderAudioProcessorEditor::buttonClicked(juce::Button* button)
 //==============================================================================
 void JCBExpanderAudioProcessorEditor::handleParameterChange()
 {
+    // Verificación de thread solo en debug - no afecta release builds
+    #if JUCE_DEBUG
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    #endif
+    
     // No hacer nada si estamos cargando un preset
     if (isLoadingPreset) {
         return;
@@ -1056,14 +1057,14 @@ void JCBExpanderAudioProcessorEditor::handleParameterChange()
         // No hay preset seleccionado - verificar si es DEFAULT
         juce::String currentText = presetArea.presetMenu.getTextWhenNothingSelected();
         if (currentText == "DEFAULT" || currentText.isEmpty()) {
-            // DEFAULT nunca debe mostrarse como modificado
-            // En su lugar, no mostrar nada
-            presetArea.presetMenu.setTextWhenNothingSelected("");
-            presetArea.presetMenu.setTextItalic(false);
+            // DEFAULT modificado debe mostrar "DEFAULT*" en itálica
+            auto modifiedText = "DEFAULT*";
+            presetArea.presetMenu.setTextWhenNothingSelected(modifiedText);
+            presetArea.presetMenu.setTextItalic(true);
             
             // Guardar el estado visual en el processor
-            processor.setPresetDisplayText("");
-            processor.setPresetTextItalic(false);
+            processor.setPresetDisplayText(modifiedText);
+            processor.setPresetTextItalic(true);
         }
         // Si ya tiene un asterisco, no hacer nada
     }

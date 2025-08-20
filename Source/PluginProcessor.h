@@ -257,8 +257,6 @@ public:
     std::atomic<bool> needsEditorUpdate{false};
     
 private:
-    juce::SpinLock bypassDelayLock; // protege bypassDelayBuffer y bypassDelayWritePos
-
     mutable std::atomic<float> currentGainReductionLinear{1.0f};
     
     // Parámetro AAX de reducción de ganancia
@@ -304,6 +302,25 @@ private:
     // ---- BYPASS COMPENSADO ----
     juce::AudioBuffer<float> bypassDelayBuffer;
     int bypassDelayWritePos { 0 };
+    juce::SpinLock bypassDelayLock;
+    
+    // ---- Suavizado de transición de bypass (Pro Tools) ----
+    juce::AudioBuffer<float> lastWetTail; // cola del último bloque activo
+    int   lastWetTailLen   { 0 };         // muestras válidas guardadas
+    bool  wasHostBypassed  { false };     // estado del bloque anterior
+    int   bypassFadeLen    { 128 };       // 32–64-128 recomendado
+    int   bypassFadePos    { -1 };        // -1 = inactivo
+    
+    // Espejo del bypass del host
+    std::atomic<bool> hostBypassMirror { false };
+    
+    // Helper para leer el parámetro de bypass del host
+    inline bool isHostBypassed() const noexcept
+    {
+        if (auto* p = getBypassParameter())          // JUCE crea un parámetro estándar de bypass
+            return p->getValue() >= 0.5f;            // 0..1
+        return false;
+    }
     
     // ---- LATENCIA SEGURA (message thread) ----
     std::atomic<int> pendingLatency { -1 };
@@ -314,6 +331,10 @@ private:
     std::atomic<uint32_t> lastLAChangeMs   { 0 };     // timestamp (ms) del último cambio
     std::atomic<bool>    laCommitPending   { false }; // hay commit pendiente de aplicar
     int                  laDebounceMs      { 140 };   // ventana de inactividad antes de aplicar (ms)
+
+    // Cache de índices de Gen~ para evitar búsquedas repetidas
+    int genIdxLookahead { -1 };
+    int genIdxBypass { -1 };
 
     std::atomic<int> intrinsicGenOffset { 0 }; // 0 si Gen no añade +1; 1 si sí
     // Helper: calcula latencia en muestras a partir del parámetro n_LOOKAHEAD (ms)
