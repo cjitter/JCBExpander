@@ -299,20 +299,50 @@ private:
     ParameterState stateB;
     bool isStateA{true};
     
-    // ---- BYPASS COMPENSADO ----
-    juce::AudioBuffer<float> bypassDelayBuffer;
-    int bypassDelayWritePos { 0 };
-    juce::SpinLock bypassDelayLock;
+    // ==============================================================================
+    // SISTEMA DE BYPASS COMPENSADO
+    // ==============================================================================
     
-    // ---- Suavizado de transición de bypass (Pro Tools) ----
-    juce::AudioBuffer<float> lastWetTail; // cola del último bloque activo
-    int   lastWetTailLen   { 0 };         // muestras válidas guardadas
-    bool  wasHostBypassed  { false };     // estado del bloque anterior
-    int   bypassFadeLen    { 128 };       // 32–64-128 recomendado
-    int   bypassFadePos    { -1 };        // -1 = inactivo
+    // --- Ring Buffer para compensación de latencia ---
+    juce::AudioBuffer<float> bypassDelayBuffer;  // Ring buffer circular para DRY compensado
+    int  bypassDelayWritePos { 0 };              // Posición de escritura actual en el ring
+    juce::SpinLock bypassDelayLock;              // Lock para thread-safety del ring buffer
+    int  bypassDelayCapacity { 0 };              // Capacidad fija preasignada (máximo lookahead)
+    int  dryPrimedSamples   { 0 };               // Contador de muestras válidas en el ring
     
-    // Espejo del bypass del host
-    std::atomic<bool> hostBypassMirror { false };
+    // --- Scratch Buffers RT-safe ---
+    juce::AudioBuffer<float> scratchIn;          // Buffer temporal para entrada (2ch: L/R)
+    juce::AudioBuffer<float> scratchDry;         // Buffer temporal para DRY compensado (2ch: L/R)
+    int scratchCapacitySamples { 0 };            // Capacidad actual de los scratch buffers
+    
+    // Helper: asegura capacidad de scratch sin allocations en audio thread
+    inline void ensureScratchCapacity (int numSamples)
+    {
+        if (numSamples > scratchCapacitySamples)
+        {
+            scratchIn.setSize (2, numSamples, false, false, true);
+            scratchDry.setSize(2, numSamples, false, false, true);
+            scratchIn.clear();
+            scratchDry.clear();
+            scratchCapacitySamples = numSamples;
+        }
+    }
+    
+    // --- FSM de Bypass con Fade ---
+    enum class BypassState { Active, FadingToBypass, Bypassed, FadingToActive };
+    BypassState bypassState { BypassState::Active };  // Estado actual del bypass
+    int  bypassFadeLen { 384 };                       // Longitud del fade en samples
+    float bypassFadeMs { 7.0f };                      // Duración del fade en ms
+    int  bypassFadePos { 0 };                         // Posición actual del fade
+    
+    // --- Control y sincronización ---
+    std::atomic<bool> hostBypassMirror { false };     // Espejo atómico del estado de bypass
+    bool lastWantsBypass { false };                   // Estado anterior para detección de flancos
+    
+    // --- Compatibilidad con sistema anterior ---
+    juce::AudioBuffer<float> lastWetTail;             // Mantenido por compatibilidad (no usado en nuevo sistema)
+    int   lastWetTailLen   { 0 };                     // Mantenido por compatibilidad
+    bool  wasHostBypassed  { false };                 // Mantenido por compatibilidad
     
     // Helper para leer el parámetro de bypass del host
     inline bool isHostBypassed() const noexcept
@@ -360,6 +390,9 @@ private:
     
     // Override de AsyncUpdater
     void handleAsyncUpdate() override;
+    
+    // Método común de procesamiento para bypass compensado
+    void processBlockCommon(juce::AudioBuffer<float>& buffer, bool hostWantsBypass);
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JCBExpanderAudioProcessor)
