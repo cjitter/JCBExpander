@@ -81,7 +81,7 @@ cmake --build build-release   # Para Release
 - **Formatos disponibles**: VST3, AU y AAX.
 - **Visualización del diagrama de bloques**: Acceso al diagrama completo del expansor con posibilidad de explorar cada bloque y copiar el código GenExpr para usar directamente en objetos Codebox o gen.codebox~ (Max 9).
 
-## Novedades v0.9.2 (última beta antes de la alpha 1.0.0)
+## Novedades v0.9.2-v2 (última beta antes de la alpha 1.0.0)
 
 - **Corrección de latencia intrínseca de Gen~:** eliminado el desfase de +1 muestra mediante ajuste interno en delays, asegurando null tests perfectos en todos los hosts.
 - **Bypass sin clics:** implementación de `processBlockBypassed()` con buffer de compensación, garantizando conmutación síncrona entre host e interno sin artefactos audibles.
@@ -95,6 +95,7 @@ cmake --build build-release   # Para Release
   - Estados visuales y de UI (ej. botón Graphics) guardados/restaurados con los presets.
   - Botones BYPASS, DELTA y SOLO SC ahora marcan correctamente el preset como modificado.
 - **Validación completa:** superados todos los test de validación estricta en **pluginval**, **auval**, **vst3validator** y **aaxvalidator** sin advertencias.
+- Implementación sistema de bypass compensado (portado de JCBTransient y JCBCompressor)
 - Estas mejoras consolidan la estabilidad del plugin y preparan la transición a la **versión 1.0.0 alpha**.
 
 ![Diagrama de Bloques](Assets/screenshotDiagram.png)
