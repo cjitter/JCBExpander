@@ -81,7 +81,7 @@ cmake --build build-release   # Para Release
 - **Formatos disponibles**: VST3, AU y AAX.
 - **Visualización del diagrama de bloques**: Acceso al diagrama completo del expansor con posibilidad de explorar cada bloque y copiar el código GenExpr para usar directamente en objetos Codebox o gen.codebox~ (Max 9).
 
-## Novedades v0.9.2-v2 (última beta antes de la alpha 1.0.0)
+## Novedades v1.0.0-alpha.1
 
 - **Corrección de latencia intrínseca de Gen~:** eliminado el desfase de +1 muestra mediante ajuste interno en delays, asegurando null tests perfectos en todos los hosts.
 - **Bypass sin clics:** implementación de `processBlockBypassed()` con buffer de compensación, garantizando conmutación síncrona entre host e interno sin artefactos audibles.
@@ -148,4 +148,4 @@ Los tests validan los formatos VST3 y AU del plugin.
 
 ---
 
-*© 2025 Juan Carlos Blancas – JCBExpander v0.9.2 beta*
+*© 2025 Juan Carlos Blancas – JCBExpander v1.0.0-alpha.1*

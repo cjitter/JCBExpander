@@ -3,14 +3,14 @@
 <PARAMETERS>
   <PARAM id="a_TRIM" value="1.788139343261719e-7"/>
   <PARAM id="b_THD" value="-18.0"/>
-  <PARAM id="c_RATIO" value="40.0"/>
-  <PARAM id="d_ATK" value="0.1000000014901161"/>
-  <PARAM id="e_REL" value="120.0"/>
-  <PARAM id="f_HOLD" value="0.0"/>
+  <PARAM id="c_RATIO" value="4.0"/>
+  <PARAM id="d_ATK" value="1.0"/>
+  <PARAM id="e_REL" value="102.5"/>
+  <PARAM id="f_HOLD" value="53.20000076293945"/>
   <PARAM id="g_REACT" value="0.0"/>
-  <PARAM id="h_RANGE" value="-24.0"/>
-  <PARAM id="i_MAKEUP" value="1.200000166893005"/>
-  <PARAM id="j_HPF" value="6015.0"/>
+  <PARAM id="h_RANGE" value="-31.69999885559082"/>
+  <PARAM id="i_MAKEUP" value="1.788139343261719e-7"/>
+  <PARAM id="j_HPF" value="20.0"/>
   <PARAM id="j_HPFORDER" value="0.0"/>
   <PARAM id="k_LPF" value="20000.0"/>
   <PARAM id="k_LPFORDER" value="0.0"/>
@@ -25,9 +25,9 @@
   <PARAM id="v_DELTA" value="0.0"/>
   <PARAM id="y_SCTRIM" value="1.788139343261719e-7"/>
   <PARAM id="z_SMOOTH" value="0.0"/>
-  <Presets currentPresetID="0" tooltipEnabled="1" presetDisplayText="DEFAULT*"
-           presetTextItalic="1" envelopeVisualEnabled="0" tooltipLanguageEnglish="0"
-           editorWidth="1435" editorHeight="410"/>
+  <Presets currentPresetID="0" tooltipEnabled="1" presetDisplayText="" presetTextItalic="0"
+           envelopeVisualEnabled="1" tooltipLanguageEnglish="0" editorWidth="1260"
+           editorHeight="360"/>
   <UISettings displayGraphicsEnvelopes="1"/>
   <ABStates isStateA="1">
     <StateA/>

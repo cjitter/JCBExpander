@@ -68,9 +68,9 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     // Verificar si el host es Logic Pro
     juce::PluginHostType hostInfo;
     if (hostInfo.isLogic()) {
-        titleText = "v0.9.2 beta";  // Solo versión para Logic Pro
+        titleText = "v1.0.0-alpha.1";  // Solo versión para Logic Pro
     } else {
-        titleText = "JCBExpander v0.9.2 beta";  // Nombre completo para otros DAWs
+        titleText = "JCBExpander v1.0.0-alpha.1";  // Nombre completo para otros DAWs
     }
     
     titleLink.setButtonText(titleText);
@@ -442,16 +442,16 @@ void JCBExpanderAudioProcessorEditor::resized()
     sidechainControls.soloScButton.setBounds(getScaledBounds(centerX - buttonWidth/2, 29, buttonWidth, 12));
     
     // === PRESET AREA (TOP LEFT) ===
-    presetArea.saveButton.setBounds(getScaledBounds(15, 15, 20, 12));  // Alineado con undo
-    presetArea.saveAsButton.setBounds(getScaledBounds(37, 15, 25, 12));
-    presetArea.deleteButton.setBounds(getScaledBounds(64, 15, 25, 12));
-    presetArea.backButton.setBounds(getScaledBounds(91, 15, 18, 12));
-    presetArea.nextButton.setBounds(getScaledBounds(112, 15, 18, 12));
-    presetArea.presetMenu.setBounds(getScaledBounds(133, 15, 65, 12));
+    presetArea.saveButton.setBounds(getScaledBounds(5, 15, 20, 12));  // Desplazado 10px a la izquierda
+    presetArea.saveAsButton.setBounds(getScaledBounds(27, 15, 25, 12));
+    presetArea.deleteButton.setBounds(getScaledBounds(54, 15, 25, 12));
+    presetArea.backButton.setBounds(getScaledBounds(81, 15, 14, 12));  // Ancho reducido de 18 a 14
+    presetArea.nextButton.setBounds(getScaledBounds(98, 15, 14, 12));  // Ancho reducido de 18 a 14
+    presetArea.presetMenu.setBounds(getScaledBounds(114, 15, 95, 12));  // Ancho ampliado de 65 a 95
     
     // Botones A/B junto al menú de preset
-    topButtons.abStateButton.setBounds(getScaledBounds(202, 15, 18, 12));
-    topButtons.abCopyButton.setBounds(getScaledBounds(222, 15, 22, 12));
+    topButtons.abStateButton.setBounds(getScaledBounds(213, 15, 18, 12));
+    topButtons.abCopyButton.setBounds(getScaledBounds(233, 15, 22, 12));
     
     // === BOTONES DE UTILIDAD (INFERIOR IZQUIERDA) ===
     utilityButtons.undoButton.setBounds(getScaledBounds(15, 179, 22, 12));
@@ -1530,7 +1530,7 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
     sidechainControls.hpfSlider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colours::white);  // Blanco fijo
     sidechainControls.hpfSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);  // Blanco fijo
     sidechainControls.hpfSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    sidechainControls.hpfSlider.setTextBoxIsEditable(false);
+    sidechainControls.hpfSlider.setTextBoxIsEditable(true);
     sidechainControls.hpfSlider.setEnabled(false);  // Inicialmente deshabilitado
     sidechainControls.hpfSlider.setAlpha(0.0f);  // Inicialmente invisible
     sidechainControls.hpfSlider.setDoubleClickReturnValue(true, 20.0f);
@@ -1564,7 +1564,7 @@ void JCBExpanderAudioProcessorEditor::setupSidechainControls()
     sidechainControls.lpfSlider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colours::white);  // Blanco fijo
     sidechainControls.lpfSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);  // Blanco fijo
     sidechainControls.lpfSlider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    sidechainControls.lpfSlider.setTextBoxIsEditable(false);
+    sidechainControls.lpfSlider.setTextBoxIsEditable(true);
     sidechainControls.lpfSlider.setEnabled(false);  // Inicialmente deshabilitado
     sidechainControls.lpfSlider.setAlpha(0.0f);  // Inicialmente invisible
     sidechainControls.lpfSlider.setDoubleClickReturnValue(true, 20000.0f);
@@ -3112,6 +3112,9 @@ void JCBExpanderAudioProcessorEditor::deletePresetFile()
                 // Actualizar el menú
                 refreshPresetMenu();
                 
+                // Resetear el último preset para evitar selección automática
+                processor.setLastPreset(0);
+                
                 // Dejar el menú sin selección y sin texto
                 presetArea.presetMenu.setSelectedId(0);
                 presetArea.presetMenu.setTextWhenNothingSelected("");
@@ -3399,7 +3402,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     if (currentLanguage == TooltipLanguage::Spanish)
     {
         // Spanish tooltips - usar JUCE_UTF8 solo donde sea necesario para caracteres especiales
-        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v0.9.2 beta\nPlugin de audio open source\nClick para créditos");
+        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v1.0.0-alpha.1\nPlugin de audio open source\nClick para créditos");
         if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la expansión\nSeñales bajo este nivel se expanden\nRango: -60 a 0 dB | Por defecto: -18 dB");
         if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 1:1 a 40:1 | Por defecto: 4:1");
         if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 1 dB");
@@ -3442,7 +3445,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     else
     {
         // English tooltips
-        if (key == "title") return "JCBExpander: audio expander v0.9.2 beta\nOpen source audio plugin\nClick for credits";
+        if (key == "title") return "JCBExpander: audio expander v1.0.0-alpha.1\nOpen source audio plugin\nClick for credits";
         if (key == "thd") return "THRESHOLD: level where expansion begins\nSignals below this level are expanded\nRange: -60 to 0 dB | Default: -18 dB";
         if (key == "ratio") return "RATIO: amount of expansion applied\nInput/output relationship below threshold\nRange: 1:1 to 40:1 | Default: 4:1";
         if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 1 to 10 dB | Default: 1 dB";

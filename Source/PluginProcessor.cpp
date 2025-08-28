@@ -226,7 +226,7 @@ void JCBExpanderAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     {
         const int chans = getTotalNumOutputChannels();
         // Obtener máximo lookahead del parámetro (ajustar según tu plugin)
-        float maxLAMs = 200.0f; // fallback, ajustar según tu rango de lookahead
+        float maxLAMs = 15.0f; // fallback, ajustar según tu rango de lookahead
         if (auto* p = dynamic_cast<juce::AudioParameterFloat*>(apvts.getParameter("n_LOOKAHEAD")))
             maxLAMs = p->range.end;
 
@@ -302,6 +302,274 @@ void JCBExpanderAudioProcessor::processBlockBypassed(juce::AudioBuffer<float>& b
     processBlockCommon(buffer, /*hostWantsBypass*/ true);
 }
 
+void JCBExpanderAudioProcessor::processBlockCommon(juce::AudioBuffer<float>& buffer, bool hostWantsBypass)
+{
+    juce::ScopedNoDenormals noDenormals;
+    const int numSamples  = buffer.getNumSamples();
+    const int numChannels = buffer.getNumChannels();
+
+    // === Ajustes de buffers (idéntico a tu processBlock actual) ===
+    if (grBuffer.getNumChannels() != getTotalNumOutputChannels()
+     || grBuffer.getNumSamples()  != numSamples)
+        grBuffer.setSize(getTotalNumOutputChannels(), numSamples, false, false, true);
+    if (trimInputBuffer.getNumChannels() != 2
+     || trimInputBuffer.getNumSamples() != numSamples)
+        trimInputBuffer.setSize(2, numSamples, false, false, true);
+    if (sidechainBuffer.getNumChannels() != getTotalNumInputChannels()
+     || sidechainBuffer.getNumSamples() != numSamples)
+        sidechainBuffer.setSize(getTotalNumInputChannels(), numSamples, false, false, true);
+
+    { std::unique_lock<std::mutex> lock(waveformMutex, std::try_to_lock);
+      if (lock.owns_lock()) {
+          if (currentInputSamples.size() < (size_t)numSamples)    currentInputSamples.resize(numSamples);
+          if (currentProcessedSamples.size() < (size_t)numSamples) currentProcessedSamples.resize(numSamples);
+          if (currentGainReductionSamples.size() < (size_t)numSamples) currentGainReductionSamples.resize(numSamples);
+      } }
+
+    assureBufferSize(numSamples);
+
+    // === Debounce de lookahead ===
+    if (laCommitPending.load(std::memory_order_acquire))
+    {
+        const uint32_t now  = juce::Time::getMillisecondCounter();
+        const uint32_t last = lastLAChangeMs.load(std::memory_order_relaxed);
+        if ((int)(now - last) > laDebounceMs)
+        {
+            // Aplicar a Gen~ ya debounced
+            if (genIdxLookahead >= 0) {
+                const float ms = stagedLookaheadMs.load(std::memory_order_relaxed);
+                JCBExpander::setparameter(m_PluginState, genIdxLookahead, ms, nullptr);
+            }
+            // Actualizar latencia reportada de forma atómica
+            const int newL = juce::jmin(computeLatencySamples(getSampleRate()),
+                                        juce::jmax(0, bypassDelayCapacity));
+            if (newL != pendingLatency.load(std::memory_order_relaxed) && newL != currentLatency) {
+                pendingLatency.store(newL, std::memory_order_relaxed);
+                triggerAsyncUpdate();
+            }
+            laCommitPending.store(false, std::memory_order_release);
+        }
+    }
+
+    // Capturar la ENTRADA del host (RT-safe, sin allocs por bloque)
+    ensureScratchCapacity (numSamples);
+    float* inL = scratchIn.getWritePointer(0);
+    float* inR = scratchIn.getWritePointer(1);
+    {
+        const float* srcL = buffer.getReadPointer(0);
+        const float* srcR = (numChannels > 1) ? buffer.getReadPointer(1) : srcL;
+        std::memcpy(inL, srcL, sizeof(float) * (size_t) numSamples);
+        if (numChannels > 1) std::memcpy(inR, srcR, sizeof(float) * (size_t) numSamples);
+        else                 std::memcpy(inR, inL,  sizeof(float) * (size_t) numSamples);
+    }
+
+    // === Render WET (Gen~ siempre encendido) ===
+    fillGenInputBuffers(buffer);
+    processGenAudio(numSamples);
+    fillOutputBuffers(buffer); // buffer = WET
+    auto* wetL = buffer.getWritePointer(0);
+    auto* wetR = (numChannels > 1) ? buffer.getWritePointer(1) : wetL;
+
+    // === Dry compensado SIEMPRE activo ===
+    const int delaySamplesRaw = juce::jmax(0, getLatencySamples());
+    const int delaySamples = (bypassDelayCapacity > 0) ? juce::jmin(delaySamplesRaw, bypassDelayCapacity) : 0;
+    float* dryL = scratchDry.getWritePointer(0);
+    float* dryR = scratchDry.getWritePointer(1);
+    {
+        const juce::SpinLock::ScopedLockType sl(bypassDelayLock);
+
+        // Nunca realocar aquí. Si cambia nº de canales en caliente (raro), rehacer limpio.
+        if (bypassDelayCapacity > 0 && bypassDelayBuffer.getNumChannels() != numChannels) {
+            bypassDelayBuffer.setSize(numChannels, bypassDelayCapacity);
+            bypassDelayBuffer.clear();
+            bypassDelayWritePos = 0;
+            dryPrimedSamples    = 0;
+        }
+
+        // Operación normal
+        if (delaySamples <= 0 || bypassDelayCapacity == 0) {
+            // Sin latencia efectiva: DRY = entrada instantánea
+            for (int n = 0; n < numSamples; ++n) {
+                dryL[n] = inL[n];
+                if (numChannels > 1) dryR[n] = inR[n];
+            }
+        } else {
+            for (int n = 0; n < numSamples; ++n) {
+                int readPosA = bypassDelayWritePos - delaySamples;
+                while (readPosA < 0) readPosA += bypassDelayCapacity;
+                readPosA %= juce::jmax(1, bypassDelayCapacity);
+                for (int ch = 0; ch < numChannels; ++ch) {
+                    float* dline = bypassDelayBuffer.getWritePointer(ch);
+                    const float delayedA = dline[readPosA];
+                    const float inSample = (ch == 0 ? inL[n] : (numChannels > 1 ? inR[n] : inL[n]));
+                    const bool primedA = (dryPrimedSamples >= delaySamples);
+                    float drySample = primedA ? delayedA : inSample;
+                    if (ch == 0) dryL[n] = drySample; else dryR[n] = drySample;
+                    dline[bypassDelayWritePos] = inSample;
+                }
+                bypassDelayWritePos = (bypassDelayWritePos + 1) % juce::jmax(1, bypassDelayCapacity);
+                dryPrimedSamples    = juce::jmin(dryPrimedSamples + 1, bypassDelayCapacity);
+            }
+        }
+    }
+
+    // === FSM y mezcla equal-power ===
+    // Latch del estado de bypass al INICIO de bloque
+    const bool wantsBypass = hostWantsBypass;
+    hostBypassMirror.store(wantsBypass, std::memory_order_relaxed);
+    const bool bypassEdge = (wantsBypass != lastWantsBypass);
+    lastWantsBypass = wantsBypass;
+
+    const int primingTarget = juce::jmax(0, juce::jmin(delaySamples, bypassDelayCapacity) - 1);
+    const bool ringReady = (delaySamples <= 0) || (dryPrimedSamples >= primingTarget);
+
+    // Arrancar/invertir fade sólo en flanco (bypassEdge) y al comienzo de bloque
+    switch (bypassState)
+    {
+        case BypassState::Active:
+            if (bypassEdge && wantsBypass) {
+                bypassState = BypassState::FadingToBypass;
+                bypassFadePos = 0;
+            }
+            break;
+        case BypassState::Bypassed:
+            if (bypassEdge && !wantsBypass) {
+                bypassState = BypassState::FadingToActive;
+                bypassFadePos = 0;
+            }
+            break;
+        case BypassState::FadingToBypass:
+            if (bypassEdge && !wantsBypass) {
+                bypassState   = BypassState::FadingToActive;
+                bypassFadePos = juce::jmax(0, bypassFadeLen - bypassFadePos);
+            }
+            break;
+        case BypassState::FadingToActive:
+            if (bypassEdge && wantsBypass) {
+                bypassState   = BypassState::FadingToBypass;
+                bypassFadePos = juce::jmax(0, bypassFadeLen - bypassFadePos);
+            }
+            break;
+    }
+
+    const bool fading = (bypassState == BypassState::FadingToBypass || bypassState == BypassState::FadingToActive);
+    if (!fading)
+    {
+        if (bypassState == BypassState::Active)
+        {
+            // WET tal cual (ya está en buffer)
+        }
+        else // Bypassed
+        {
+            for (int n = 0; n < numSamples; ++n) {
+                wetL[n] = dryL[n];
+                if (numChannels > 1) wetR[n] = dryR[n];
+            }
+        }
+    }
+    else
+    {
+        // --- Alineación opcional a cruce por cero (reduce micro-clicks en subgraves)
+        int fadeStartOffset = 0;
+        const bool startingFadeThisBlock =
+            ((bypassEdge && wantsBypass  && bypassState == BypassState::FadingToBypass) ||
+             (bypassEdge && !wantsBypass && bypassState == BypassState::FadingToActive))
+            && (bypassFadePos == 0);
+
+        if (startingFadeThisBlock && ringReady)
+        {
+            // Señal de referencia: hacia bypass -> alínea a DRY; hacia activo -> alínea a WET
+            const float* refL = (bypassState == BypassState::FadingToBypass) ? dryL : wetL;
+            const float* refR = (numChannels > 1)
+                                    ? ((bypassState == BypassState::FadingToBypass) ? dryR : wetR)
+                                    : refL;
+            auto nearZero = [](float x) noexcept { return std::abs(x) < 1.0e-5f; };
+            const int searchMax = juce::jmin(32, numSamples - 1);
+            for (int i = 1; i <= searchMax; ++i)
+            {
+                const float l0 = refL[i-1], l1 = refL[i];
+                const float r0 = refR[i-1], r1 = refR[i];
+                const bool zcL = (nearZero(l0) || nearZero(l1) || (l0 * l1 <= 0.0f));
+                const bool zcR = (nearZero(r0) || nearZero(r1) || (r0 * r1 <= 0.0f));
+                if (zcL || zcR) { fadeStartOffset = i; break; }
+            }
+        }
+
+        for (int n = 0; n < numSamples; ++n)
+        {
+            float wWet = 0.0f, wDry = 0.0f;
+
+            // Antes del offset elegido, fija pesos y NO avances el fade
+            if (n < fadeStartOffset)
+            {
+                if (bypassState == BypassState::FadingToBypass) { wWet = 1.0f; wDry = 0.0f; }
+                else                                            { wWet = 0.0f; wDry = 1.0f; }
+                const float outL = wWet * wetL[n] + wDry * dryL[n];
+                const float outR = wWet * wetR[n] + wDry * (numChannels > 1 ? dryR[n] : dryL[n]);
+                wetL[n] = outL;
+                if (numChannels > 1) wetR[n] = outR;
+                continue;
+            }
+
+            if (! ringReady)
+            {
+                // Aún no hay historia suficiente en el ring: fija pesos y NO avances el fade
+                if (bypassState == BypassState::FadingToBypass) { wWet = 1.0f; wDry = 0.0f; }
+                else                                            { wWet = 0.0f; wDry = 1.0f; }
+            }
+            else
+            {
+                const float t = juce::jlimit(0.0f, 1.0f,
+                                             (float) bypassFadePos / (float) juce::jmax(1, bypassFadeLen));
+                // Ventana Hann (sin^2 / cos^2) para mantener amplitud estable
+                const float s = std::sin(t * juce::MathConstants<float>::halfPi);
+                const float c = std::cos(t * juce::MathConstants<float>::halfPi);
+
+                if (bypassState == BypassState::FadingToBypass) {
+                    wWet = c * c;   // cos^2 (de 1 a 0)
+                    wDry = s * s;   // sin^2 (de 0 a 1)
+                } else {
+                    wWet = s * s;   // sin^2 (de 0 a 1)
+                    wDry = c * c;   // cos^2 (de 1 a 0)
+                }
+            }
+
+            const float outL = wWet * wetL[n] + wDry * dryL[n];
+            const float outR = wWet * wetR[n] + wDry * (numChannels > 1 ? dryR[n] : dryL[n]);
+            wetL[n] = outL;
+            if (numChannels > 1) wetR[n] = outR;
+
+            // Avanzar el fade SOLO si el ring está listo
+            if (ringReady)
+            {
+                ++bypassFadePos;
+                if (bypassFadePos >= bypassFadeLen)
+                {
+                    bypassState = (bypassState == BypassState::FadingToBypass) ? BypassState::Bypassed
+                                                                               : BypassState::Active;
+                    // Resto del bloque ya en estado final
+                    if (bypassState == BypassState::Bypassed) {
+                        for (int k = n + 1; k < numSamples; ++k) {
+                            wetL[k] = dryL[k];
+                            if (numChannels > 1) wetR[k] = dryR[k];
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // === Meters y capturas (como al final de tu processBlock) ===
+    captureInputWaveformData(buffer, numSamples);
+    captureOutputWaveformData(numSamples);
+    updateClipDetection(buffer, buffer);
+    updateInputMeters(buffer);
+    updateOutputMeters(buffer);
+    updateGainReductionMeter(numSamples);
+    updateSidechainMeters(buffer);
+}
+
 //==============================================================================
 // INTEGRACIÓN GEN~
 //==============================================================================
@@ -311,6 +579,7 @@ void JCBExpanderAudioProcessor::processBlockBypassed(juce::AudioBuffer<float>& b
  * CRÍTICO: Esta función gestiona la memoria dinámica para la comunicación con el motor DSP Gen~
  * AUDIO-THREAD SAFE: Solo redimensiona si es absolutamente necesario para evitar RT violations
  */
+
 void JCBExpanderAudioProcessor::assureBufferSize(long bufferSize)
 {
     if (bufferSize > m_CurrentBufferSize) {
@@ -489,60 +758,6 @@ void JCBExpanderAudioProcessor::updateOutputMeters(const juce::AudioBuffer<float
     }
 }
 
-/*void JCBExpanderAudioProcessor::updateGainReductionMeter()
-{
-    const int numSamples = grBuffer.getNumSamples();
-    t_sample* grData = m_OutputBuffers[2]; // out3 = gain reduction (valores lineales)
-
-    // NUEVO: Replicar exactamente Max: outlet 3 → average~ 4800 1 → linear2db → slider
-    float finalAveragedLinear = 1.0f; // Inicializar a 1.0 (sin reducción)
-
-    // Verificar si hay muestras para procesar
-    if (numSamples > 0 && grData != nullptr) {
-        // Procesar cada muestra con promedio móvil de 4800 muestras (modo absoluto)
-        for (int i = 0; i < numSamples; ++i) {
-            float grLinear = static_cast<float>(grData[i]);
-            // Aplicar promedio móvil con modo absoluto (average~ 4800 1)
-            finalAveragedLinear = grMovingAverage.processSample(grLinear);
-        }
-    } else {
-        // Sin muestras válidas - mantener estado actual del promedio móvil
-        finalAveragedLinear = grMovingAverage.getCurrentAverage();
-    }
-
-    // CORREGIR: Gen~ out3 da gain multipliers donde:
-    // 1.0 = sin reducción (0 dB en el slider)
-    // < 1.0 = reducción (valores negativos en el slider)
-
-    // Convertir de gain multiplier a dB de reducción
-    float valueGR_dB;
-
-    // CORREGIDO FINAL: Lógica correcta para medidor de gain reduction
-    // Sin reducción = 0 dB (sin barra blanca), Con reducción = valores negativos (barra blanca crece)
-    if (finalAveragedLinear >= 0.999f) {
-        // Sin reducción significativa - mostrar 0 dB (sin barra blanca visible)
-        valueGR_dB = 0.0f;
-    } else {
-        // Hay reducción - convertir a dB negativos donde valores más negativos = más barra
-        constexpr float minLinearValue = 0.000001f; // Evitar -inf
-        finalAveragedLinear = std::max(finalAveragedLinear, minLinearValue);
-        valueGR_dB = juce::Decibels::gainToDecibels(finalAveragedLinear);
-        // Clampear al rango del slider
-        valueGR_dB = juce::jlimit(-100.0f, 0.0f, valueGR_dB);
-    }
-
-    // CRÍTICO: Usar atomic store para thread safety
-    gainReduction.store(valueGR_dB, std::memory_order_relaxed);
-
-    // Almacenar el valor para AAX (Pro Tools lo leerá cuando lo necesite)
-    #if JucePlugin_Build_AAX
-    // Gen~ out3 ya devuelve valores lineales donde:
-    // 1.0 = sin reducción
-    // < 1.0 = hay reducción
-    // Usar el valor promediado final en lugar del anterior minGainMultiplier
-    currentGainReductionLinear.store(finalAveragedLinear);
-    #endif
-}*/
 void JCBExpanderAudioProcessor::updateGainReductionMeter(int numSamples)
 {
     jassert(numSamples >= 0);
@@ -750,7 +965,7 @@ bool JCBExpanderAudioProcessor::isBusesLayoutSupported(const juce::AudioProcesso
  * Crear el layout de parámetros del plugin
  * CRÍTICO: Define todos los parámetros del compresor en orden alfabético
  * Incluye configuración de rangos, valores por defecto y metadata para cada parámetro
- * Version hint 21 fuerza re-escaneo en hosts para parámetros renombrados
+ * Version hint + fuerza re-escaneo en hosts para parámetros renombrados
  */
 juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::createParameterLayout()
 {
@@ -1087,7 +1302,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
    return { params.begin(), params.end() };
 }
 
-
 //==============================================================================
 // GESTIÓN DE PARÁMETROS
 //==============================================================================
@@ -1332,13 +1546,11 @@ float JCBExpanderAudioProcessor::getMaxGainReduction() const noexcept
     return gainReduction.load(std::memory_order_relaxed);
 }
 
-
 bool JCBExpanderAudioProcessor::isPlaybackActive() const noexcept
 {
     // Siempre activo para decay permanente como plugins profesionales
     return true;
 }
-
 
 //==============================================================================
 // GESTIÓN DEL EDITOR
@@ -1347,7 +1559,6 @@ juce::AudioProcessorEditor* JCBExpanderAudioProcessor::createEditor()
 {
     return new JCBExpanderAudioProcessorEditor(*this, guiUndoManager);
 }
-
 
 //==============================================================================
 // SERIALIZACIÓN DEL ESTADO
@@ -1549,8 +1760,6 @@ void JCBExpanderAudioProcessor::copyBtoA()
     stateA = stateB;
 }
 
-// isBeingAutomated() eliminado - ya no necesario con sistema undo simplificado
-
 //==============================================================================
 // MÉTODOS LEGACY
 //==============================================================================
@@ -1666,7 +1875,6 @@ bool JCBExpanderAudioProcessor::isOutputChannelStereoPair(int index) const
 {
     return JCBExpander::num_outputs() == 2;
 }
-
 
 //==============================================================================
 // Clip Detection Methods
@@ -1830,277 +2038,6 @@ void JCBExpanderAudioProcessor::updateVST3GainReduction()
     // Por ahora solo preparamos el método
 }
 #endif
-
-//==============================================================================
-// MÉTODO COMÚN DE PROCESAMIENTO PARA BYPASS COMPENSADO
-//==============================================================================
-void JCBExpanderAudioProcessor::processBlockCommon(juce::AudioBuffer<float>& buffer, bool hostWantsBypass)
-{
-    juce::ScopedNoDenormals noDenormals;
-    const int numSamples  = buffer.getNumSamples();
-    const int numChannels = buffer.getNumChannels();
-
-    // === Ajustes de buffers (idéntico a tu processBlock actual) ===
-    if (grBuffer.getNumChannels() != getTotalNumOutputChannels()
-     || grBuffer.getNumSamples()  != numSamples)
-        grBuffer.setSize(getTotalNumOutputChannels(), numSamples, false, false, true);
-    if (trimInputBuffer.getNumChannels() != 2
-     || trimInputBuffer.getNumSamples() != numSamples)
-        trimInputBuffer.setSize(2, numSamples, false, false, true);
-    if (sidechainBuffer.getNumChannels() != getTotalNumInputChannels()
-     || sidechainBuffer.getNumSamples() != numSamples)
-        sidechainBuffer.setSize(getTotalNumInputChannels(), numSamples, false, false, true);
-
-    { std::unique_lock<std::mutex> lock(waveformMutex, std::try_to_lock);
-      if (lock.owns_lock()) {
-          if (currentInputSamples.size() < (size_t)numSamples)    currentInputSamples.resize(numSamples);
-          if (currentProcessedSamples.size() < (size_t)numSamples) currentProcessedSamples.resize(numSamples);
-          if (currentGainReductionSamples.size() < (size_t)numSamples) currentGainReductionSamples.resize(numSamples);
-      } }
-
-    assureBufferSize(numSamples);
-
-    // === Debounce de lookahead ===
-    if (laCommitPending.load(std::memory_order_acquire))
-    {
-        const uint32_t now  = juce::Time::getMillisecondCounter();
-        const uint32_t last = lastLAChangeMs.load(std::memory_order_relaxed);
-        if ((int)(now - last) > laDebounceMs)
-        {
-            // Aplicar a Gen~ ya debounced
-            if (genIdxLookahead >= 0) {
-                const float ms = stagedLookaheadMs.load(std::memory_order_relaxed);
-                JCBExpander::setparameter(m_PluginState, genIdxLookahead, ms, nullptr);
-            }
-            // Actualizar latencia reportada de forma atómica
-            const int newL = juce::jmin(computeLatencySamples(getSampleRate()),
-                                        juce::jmax(0, bypassDelayCapacity));
-            if (newL != pendingLatency.load(std::memory_order_relaxed) && newL != currentLatency) {
-                pendingLatency.store(newL, std::memory_order_relaxed);
-                triggerAsyncUpdate();
-            }
-            laCommitPending.store(false, std::memory_order_release);
-        }
-    }
-
-    // Capturar la ENTRADA del host (RT-safe, sin allocs por bloque)
-    ensureScratchCapacity (numSamples);
-    float* inL = scratchIn.getWritePointer(0);
-    float* inR = scratchIn.getWritePointer(1);
-    {
-        const float* srcL = buffer.getReadPointer(0);
-        const float* srcR = (numChannels > 1) ? buffer.getReadPointer(1) : srcL;
-        std::memcpy(inL, srcL, sizeof(float) * (size_t) numSamples);
-        if (numChannels > 1) std::memcpy(inR, srcR, sizeof(float) * (size_t) numSamples);
-        else                 std::memcpy(inR, inL,  sizeof(float) * (size_t) numSamples);
-    }
-
-    // === Render WET (Gen~ siempre encendido) ===
-    fillGenInputBuffers(buffer);
-    processGenAudio(numSamples);
-    fillOutputBuffers(buffer); // buffer = WET
-    auto* wetL = buffer.getWritePointer(0);
-    auto* wetR = (numChannels > 1) ? buffer.getWritePointer(1) : wetL;
-
-    // === Dry compensado SIEMPRE activo ===
-    const int delaySamplesRaw = juce::jmax(0, getLatencySamples());
-    const int delaySamples = (bypassDelayCapacity > 0) ? juce::jmin(delaySamplesRaw, bypassDelayCapacity) : 0;
-    float* dryL = scratchDry.getWritePointer(0);
-    float* dryR = scratchDry.getWritePointer(1);
-    {
-        const juce::SpinLock::ScopedLockType sl(bypassDelayLock);
-        
-        // Nunca realocar aquí. Si cambia nº de canales en caliente (raro), rehacer limpio.
-        if (bypassDelayCapacity > 0 && bypassDelayBuffer.getNumChannels() != numChannels) {
-            bypassDelayBuffer.setSize(numChannels, bypassDelayCapacity);
-            bypassDelayBuffer.clear();
-            bypassDelayWritePos = 0;
-            dryPrimedSamples    = 0;
-        }
-
-        // Operación normal
-        if (delaySamples <= 0 || bypassDelayCapacity == 0) {
-            // Sin latencia efectiva: DRY = entrada instantánea
-            for (int n = 0; n < numSamples; ++n) { 
-                dryL[n] = inL[n]; 
-                if (numChannels > 1) dryR[n] = inR[n]; 
-            }
-        } else {
-            for (int n = 0; n < numSamples; ++n) {
-                int readPosA = bypassDelayWritePos - delaySamples;
-                while (readPosA < 0) readPosA += bypassDelayCapacity;
-                readPosA %= juce::jmax(1, bypassDelayCapacity);
-                for (int ch = 0; ch < numChannels; ++ch) {
-                    float* dline = bypassDelayBuffer.getWritePointer(ch);
-                    const float delayedA = dline[readPosA];
-                    const float inSample = (ch == 0 ? inL[n] : (numChannels > 1 ? inR[n] : inL[n]));
-                    const bool primedA = (dryPrimedSamples >= delaySamples);
-                    float drySample = primedA ? delayedA : inSample;
-                    if (ch == 0) dryL[n] = drySample; else dryR[n] = drySample;
-                    dline[bypassDelayWritePos] = inSample;
-                }
-                bypassDelayWritePos = (bypassDelayWritePos + 1) % juce::jmax(1, bypassDelayCapacity);
-                dryPrimedSamples    = juce::jmin(dryPrimedSamples + 1, bypassDelayCapacity);
-            }
-        }
-    }
-
-    // === FSM y mezcla equal-power ===
-    // Latch del estado de bypass al INICIO de bloque
-    const bool wantsBypass = hostWantsBypass;
-    hostBypassMirror.store(wantsBypass, std::memory_order_relaxed);
-    const bool bypassEdge = (wantsBypass != lastWantsBypass);
-    lastWantsBypass = wantsBypass;
-    
-    const int primingTarget = juce::jmax(0, juce::jmin(delaySamples, bypassDelayCapacity) - 1);
-    const bool ringReady = (delaySamples <= 0) || (dryPrimedSamples >= primingTarget);
-
-    // Arrancar/invertir fade sólo en flanco (bypassEdge) y al comienzo de bloque
-    switch (bypassState)
-    {
-        case BypassState::Active:
-            if (bypassEdge && wantsBypass) {
-                bypassState = BypassState::FadingToBypass;
-                bypassFadePos = 0;
-            }
-            break;
-        case BypassState::Bypassed:
-            if (bypassEdge && !wantsBypass) {
-                bypassState = BypassState::FadingToActive;
-                bypassFadePos = 0;
-            }
-            break;
-        case BypassState::FadingToBypass:
-            if (bypassEdge && !wantsBypass) {
-                bypassState   = BypassState::FadingToActive;
-                bypassFadePos = juce::jmax(0, bypassFadeLen - bypassFadePos);
-            }
-            break;
-        case BypassState::FadingToActive:
-            if (bypassEdge && wantsBypass) {
-                bypassState   = BypassState::FadingToBypass;
-                bypassFadePos = juce::jmax(0, bypassFadeLen - bypassFadePos);
-            }
-            break;
-    }
-
-    const bool fading = (bypassState == BypassState::FadingToBypass || bypassState == BypassState::FadingToActive);
-    if (!fading)
-    {
-        if (bypassState == BypassState::Active)
-        {
-            // WET tal cual (ya está en buffer)
-        }
-        else // Bypassed
-        {
-            for (int n = 0; n < numSamples; ++n) { 
-                wetL[n] = dryL[n]; 
-                if (numChannels > 1) wetR[n] = dryR[n]; 
-            }
-        }
-    }
-    else
-    {
-        // --- Alineación opcional a cruce por cero (reduce micro-clicks en subgraves)
-        int fadeStartOffset = 0;
-        const bool startingFadeThisBlock =
-            ((bypassEdge && wantsBypass  && bypassState == BypassState::FadingToBypass) ||
-             (bypassEdge && !wantsBypass && bypassState == BypassState::FadingToActive))
-            && (bypassFadePos == 0);
-
-        if (startingFadeThisBlock && ringReady)
-        {
-            // Señal de referencia: hacia bypass -> alínea a DRY; hacia activo -> alínea a WET
-            const float* refL = (bypassState == BypassState::FadingToBypass) ? dryL : wetL;
-            const float* refR = (numChannels > 1)
-                                    ? ((bypassState == BypassState::FadingToBypass) ? dryR : wetR)
-                                    : refL;
-            auto nearZero = [](float x) noexcept { return std::abs(x) < 1.0e-5f; };
-            const int searchMax = juce::jmin(32, numSamples - 1);
-            for (int i = 1; i <= searchMax; ++i)
-            {
-                const float l0 = refL[i-1], l1 = refL[i];
-                const float r0 = refR[i-1], r1 = refR[i];
-                const bool zcL = (nearZero(l0) || nearZero(l1) || (l0 * l1 <= 0.0f));
-                const bool zcR = (nearZero(r0) || nearZero(r1) || (r0 * r1 <= 0.0f));
-                if (zcL || zcR) { fadeStartOffset = i; break; }
-            }
-        }
-
-        for (int n = 0; n < numSamples; ++n)
-        {
-            float wWet = 0.0f, wDry = 0.0f;
-
-            // Antes del offset elegido, fija pesos y NO avances el fade
-            if (n < fadeStartOffset)
-            {
-                if (bypassState == BypassState::FadingToBypass) { wWet = 1.0f; wDry = 0.0f; }
-                else                                            { wWet = 0.0f; wDry = 1.0f; }
-                const float outL = wWet * wetL[n] + wDry * dryL[n];
-                const float outR = wWet * wetR[n] + wDry * (numChannels > 1 ? dryR[n] : dryL[n]);
-                wetL[n] = outL; 
-                if (numChannels > 1) wetR[n] = outR;
-                continue;
-            }
-
-            if (! ringReady)
-            {
-                // Aún no hay historia suficiente en el ring: fija pesos y NO avances el fade
-                if (bypassState == BypassState::FadingToBypass) { wWet = 1.0f; wDry = 0.0f; }
-                else                                            { wWet = 0.0f; wDry = 1.0f; }
-            }
-            else
-            {
-                const float t = juce::jlimit(0.0f, 1.0f,
-                                             (float) bypassFadePos / (float) juce::jmax(1, bypassFadeLen));
-                // Ventana Hann (sin^2 / cos^2) para mantener amplitud estable
-                const float s = std::sin(t * juce::MathConstants<float>::halfPi);
-                const float c = std::cos(t * juce::MathConstants<float>::halfPi);
-                
-                if (bypassState == BypassState::FadingToBypass) {
-                    wWet = c * c;   // cos^2 (de 1 a 0)
-                    wDry = s * s;   // sin^2 (de 0 a 1)
-                } else {
-                    wWet = s * s;   // sin^2 (de 0 a 1)
-                    wDry = c * c;   // cos^2 (de 1 a 0)
-                }
-            }
-
-            const float outL = wWet * wetL[n] + wDry * dryL[n];
-            const float outR = wWet * wetR[n] + wDry * (numChannels > 1 ? dryR[n] : dryL[n]);
-            wetL[n] = outL; 
-            if (numChannels > 1) wetR[n] = outR;
-
-            // Avanzar el fade SOLO si el ring está listo
-            if (ringReady)
-            {
-                ++bypassFadePos;
-                if (bypassFadePos >= bypassFadeLen)
-                {
-                    bypassState = (bypassState == BypassState::FadingToBypass) ? BypassState::Bypassed
-                                                                               : BypassState::Active;
-                    // Resto del bloque ya en estado final
-                    if (bypassState == BypassState::Bypassed) {
-                        for (int k = n + 1; k < numSamples; ++k) { 
-                            wetL[k] = dryL[k]; 
-                            if (numChannels > 1) wetR[k] = dryR[k]; 
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    // === Meters y capturas (como al final de tu processBlock) ===
-    captureInputWaveformData(buffer, numSamples);
-    captureOutputWaveformData(numSamples);
-    updateClipDetection(buffer, buffer);
-    updateInputMeters(buffer);
-    updateOutputMeters(buffer);
-    updateGainReductionMeter(numSamples);
-    updateSidechainMeters(buffer);
-}
 
 //==============================================================================
 // FACTORY FUNCTION DEL PLUGIN
