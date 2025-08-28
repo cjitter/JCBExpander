@@ -1,4 +1,3 @@
-
 ![JCBExpander Interface](Assets/screenshot.png)
 
 Plugin expansor de audio desarrollado en gen~, exportado con [gen~ Plugin Export](https://github.com/Cycling74/gen-plugin-export) y finalizado con el framework C++ [JUCE](https://github.com/juce-framework/JUCE). Este plugin forma parte de un conjunto de herramientas didácticas que utilizo en la asignatura de Técnicas de Grabación y Masterización para Música Electroacústica del [MCE](https://katarinagurska.com/curso-of/master-de-composicion-electroacustica-mce/). Originalmente creado con JUCE 6 hace unos años, el proyecto ha evolucionado significativamente en su interfaz gráfica y funcionalidad gracias al desarrollo con Claude Code durante junio de 2025. Para más detalles técnicos, consulta [NOTAS.md](NOTAS.md).
@@ -62,41 +61,19 @@ cmake --build build-release   # Para Release
 
 ## Características principales
 
-- **Ajuste de entrada** (trim ±12 dB) para ambas cadenas de audio y sidechain.
-- **Procesamiento sidechain** interno y externo con filtros paso alto y bajo, 2º orden (12/24 dB/oct).
-- **Modo de detección** sharp con sliding RMS de ventana variable y control adicional de suavizado.
-- **Ajuste interpolado independiente de reacción pico/RMS**.
-- **Expansión con softknee** de segundo orden con transición gradual (1:1 a 6:1).
-- **Controles estándar**: threshold (-60 a 0 dB), range (-100 a 0 dB), ratio (1:1 a 20:1), knee (1 a 10 dB), attack (0.1 a 250 ms), hold (0 a 250 ms), release (0.1 a 1000 ms).
-- **Control de rango** (-100 a 0 dB) para limitar la expansión máxima.
-- **Modo Delta para monitorización** de la señal diferencia (entrada vs salida).
-- **Softclipping asimétrico**, aplicado tras expansión y makeup gain.
-- **Control Dry/Wet (0 a 100%)** para mezcla de señal procesada.
-- **Procesamiento mono, mono-estéreo y estéreo**, con detección de envolvente compartida.
-- **Sistema lookahead** (0 a 10 ms) para procesamiento predictivo.
-- **Visualización gráfica**: medidores de entrada, salida y reducción de ganancia.
-- **Gestión de presets** (usuario y fábrica).
-- **Monitorización**: solo sidechain y delta.
-- **Bypass interno**, independiente del DAW.
-- **Formatos disponibles**: VST3, AU y AAX.
-- **Visualización del diagrama de bloques**: Acceso al diagrama completo del expansor con posibilidad de explorar cada bloque y copiar el código GenExpr para usar directamente en objetos Codebox o gen.codebox~ (Max 9).
-
-## Novedades v1.0.0-alpha.1
-
-- **Corrección de latencia intrínseca de Gen~:** eliminado el desfase de +1 muestra mediante ajuste interno en delays, asegurando null tests perfectos en todos los hosts.
-- **Bypass sin clics:** implementación de `processBlockBypassed()` con buffer de compensación, garantizando conmutación síncrona entre host e interno sin artefactos audibles.
-- **Gestión de lookahead refinada:**
-  - Re-sincronización segura de SR/VS internos de Gen~ en `prepareToPlay()`.
-  - Nuevo sistema de commit diferido para cambios de lookahead, evitando clics o filtrados al mover el control.
-  - Null tests verificados en Pro Tools, Logic, Live, Reaper y Bitwig.
-- **Sistema de presets jerárquico con categorías:**
-  - Presets Factory y User organizados en submenús por tipo (Drums, Voces, FX, etc.).
-  - Separadores no seleccionables.
-  - Estados visuales y de UI (ej. botón Graphics) guardados/restaurados con los presets.
-  - Botones BYPASS, DELTA y SOLO SC ahora marcan correctamente el preset como modificado.
-- **Validación completa:** superados todos los test de validación estricta en **pluginval**, **auval**, **vst3validator** y **aaxvalidator** sin advertencias.
-- Implementación sistema de bypass compensado (portado de JCBTransient y JCBCompressor)
-- Estas mejoras consolidan la estabilidad del plugin y preparan la transición a la **versión 1.0.0 alpha**.
+- **Expansor de rango dinámico** con controles de threshold, ratio, range, knee, attack, hold y release.  
+- **Control de entrada y salida** (trim y makeup) ±12 dB.  
+- **Procesamiento sidechain** interno y externo con filtros HPF/LPF variables (20 Hz – 20 kHz).  
+- **Modo lookahead** de 0 a 10 ms, mejorado para cambios suaves sin clics.  
+- **Expansión con softknee** ajustable de 1 a 10 dB.  
+- **Modo Delta activable**, para escuchar únicamente la diferencia entre señal procesada y original.  
+- **Softclip de salida** asimétrico, aplicado tras la expansión.  
+- **Mezcla Dry/Wet** de 0 a 100% entre señal procesada y señal original.  
+- **Procesamiento mono y estéreo**, con detección de envolvente compartida.  
+- **Medidores gráficos** en tiempo real de entrada, salida y reducción de ganancia.  
+- **Gestión de presets** completa (fábrica y usuario) con categorías y guardado de estados de interfaz.  
+- **Bypass interno** con transición suave y sincronización con el bypass del host (incluido Pro Tools).  
+- **Visualización del diagrama de bloques**, con acceso al código GenExpr de cada sección.  
 
 ![Diagrama de Bloques](Assets/screenshotDiagram.png)
 
