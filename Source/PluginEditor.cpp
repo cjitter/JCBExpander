@@ -2456,7 +2456,7 @@ void JCBExpanderAudioProcessorEditor::updateMeterStates()
     // También considerar si graphics está activo para mantener consistencia
     // NUEVO: También ocultar cuando BYPASS está activo
     bool graphicsActive = utilityButtons.runGraphicsButton.getToggleState();
-    grMeter.setVisible(!soloScActive && !graphicsActive && !bypassActive);
+    grMeter.setVisible(!soloScActive && graphicsActive && !bypassActive);
     
     // Actualizar gradiente de salida para modo bypass
     outputMeterL.setBypassMode(bypassActive);
