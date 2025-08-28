@@ -61,19 +61,19 @@ cmake --build build-release   # Para Release
 
 ## Características principales
 
-- **Expansor de rango dinámico** con controles de threshold, ratio, range, knee, attack, hold y release.  
-- **Control de entrada y salida** (trim y makeup) ±12 dB.  
-- **Procesamiento sidechain** interno y externo con filtros HPF/LPF variables (20 Hz – 20 kHz).  
-- **Modo lookahead** de 0 a 10 ms, mejorado para cambios suaves sin clics.  
-- **Expansión con softknee** ajustable de 1 a 10 dB.  
-- **Modo Delta activable**, para escuchar únicamente la diferencia entre señal procesada y original.  
-- **Softclip de salida** asimétrico, aplicado tras la expansión.  
-- **Mezcla Dry/Wet** de 0 a 100% entre señal procesada y señal original.  
-- **Procesamiento mono y estéreo**, con detección de envolvente compartida.  
-- **Medidores gráficos** en tiempo real de entrada, salida y reducción de ganancia.  
-- **Gestión de presets** completa (fábrica y usuario) con categorías y guardado de estados de interfaz.  
-- **Bypass interno** con transición suave y sincronización con el bypass del host (incluido Pro Tools).  
-- **Visualización del diagrama de bloques**, con acceso al código GenExpr de cada sección.  
+- **Expansor de rango dinámico** con controles de threshold, ratio, range, knee, attack, hold y release.
+- **Control de entrada y salida** (trim y makeup) ±12 dB.
+- **Procesamiento sidechain** interno y externo con filtros HPF/LPF variables (20 Hz – 20 kHz).
+- **Modo lookahead** de 0 a 10 ms, mejorado para cambios suaves sin clics.
+- **Expansión con softknee** ajustable de 1 a 10 dB.
+- **Modo Delta activable**, para escuchar únicamente la diferencia entre señal procesada y original.
+- **Softclip de salida** asimétrico, aplicado tras la expansión.
+- **Mezcla Dry/Wet** de 0 a 100% entre señal procesada y señal original.
+- **Procesamiento mono y estéreo**, con detección de envolvente compartida.
+- **Medidores gráficos** en tiempo real de entrada, salida y reducción de ganancia.
+- **Gestión de presets** completa (fábrica y usuario) con categorías y guardado de estados de interfaz.
+- **Bypass interno** con transición suave y sincronización con el bypass del host (incluido Pro Tools).
+- **Visualización del diagrama de bloques**, con acceso al código GenExpr de cada sección.
 
 ![Diagrama de Bloques](Assets/screenshotDiagram.png)
 
