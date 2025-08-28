@@ -70,7 +70,7 @@ juce_add_plugin(JCBExpander
         PLUGIN_NAME "JCBExpander"
         PRODUCT_NAME "JCBExpander"
         VERSION 1.0.0
-        DESCRIPTION "Stereo-linked feedforward compressor with external sidechain, parallel processing and lookahead"
+        DESCRIPTION "Stereo-linked expander with external sidechain, parallel processing and lookahead"
 
         # Información de la empresa
         COMPANY_NAME "Coeval"
