@@ -1,0 +1,104 @@
+// =============================================================================
+// GAIN CALCULATION BLOCK - Cálculo de Expansión de Ganancia (EXPANDER)
+// =============================================================================
+// Calcula la expansión de ganancia usando función especializada con comportamiento progresivo
+//
+// ENTRADAS:
+// - in1: Envolvente en dB (desde bloque Detector)
+//
+// SALIDA:
+// - out1: Gain reduction en dB (valores negativos = expansión)
+
+// =============================================================================
+// FUNCIÓN EXPANSOR REDISEÑADA - Comportamiento progresivo
+// =============================================================================
+softkneeSecondOrderExpansor(xg, T, R, W) {
+    _softkneeSecondOrderExpansor_ret_1 = 0;
+    
+    // Zona sutil extendida (1.0 a 6.0) - expansión muy reducida
+    if(R <= 6.0) {
+        // Factor que va de 0 a 1 entre ratio 1 y 6
+        subtle_factor = clamp((R - 1.0) / 5.0, 0, 1);
+        // Curva muy suave que gradualmente llega a 0.5 en ratio=6
+        gentle_expansion = pow(subtle_factor, 2.5) * 0.5;  // Máximo 50% de expansión en ratio=6
+        
+        // Calcular expansión normal
+        normal_expansion = 0;
+        if((2 * (xg - T)) > W) {
+            normal_expansion = xg;
+        }
+        else if((2 * (abs(xg - T))) > ((-1) * W)) {
+            normal_expansion = xg - ((pow((xg - T) - (W / 2), 2) * (R - 1)) / (2 * W));
+        }
+        else if((2 * (xg - T)) <= ((-1) * W)) {
+            normal_expansion = T + ((xg - T) / R);
+        }
+        
+        // Aplicar expansión gradual y sutil
+        _softkneeSecondOrderExpansor_ret_1 = mix(xg, normal_expansion, gentle_expansion);
+    }
+    else {
+        // A partir de 6:1 - expansión normal y más agresiva
+        if((2 * (xg - T)) > W) {
+            _softkneeSecondOrderExpansor_ret_1 = xg;
+        }
+        else if((2 * (abs(xg - T))) > ((-1) * W)) {
+            _softkneeSecondOrderExpansor_ret_1 = xg - ((pow((xg - T) - (W / 2), 2) * (R - 1)) / (2 * W));
+        }
+        else if((2 * (xg - T)) <= ((-1) * W)) {
+            _softkneeSecondOrderExpansor_ret_1 = T + ((xg - T) / R);
+        }
+    }
+    
+    return _softkneeSecondOrderExpansor_ret_1;
+}
+
+// PARÁMETROS
+Param b_THD(-60, min=-60, default=-18, max=0);        // Threshold (dB)
+Param c_RATIO(1, min=0.95, default=4, max=40);       // Expansion ratio
+Param q_KNEE(1, min=1, default=5, max=20);           // Knee width (dB)
+Param h_RANGE(-60, min=-60, default=-20, max=0);     // Range width (dB)
+
+// HISTORIAS para smoothing
+History thresholdHistory(0);
+History ratioHistory(0);
+History kneeExpHistory(0);
+History rangeHistory(0);
+
+// CONSTANTES
+SMOOTH_HISTORY_FACTOR = 0.999;
+SMOOTH_PARAM_FACTOR = 0.001;
+
+// =============================================================================
+// SMOOTHING DE PARÁMETROS
+// =============================================================================
+smoothThresholdDb = thresholdHistory * SMOOTH_HISTORY_FACTOR + b_THD * SMOOTH_PARAM_FACTOR;
+thresholdHistory = fixdenorm(smoothThresholdDb);
+
+expansionRatio = ratioHistory * SMOOTH_HISTORY_FACTOR + c_RATIO * SMOOTH_PARAM_FACTOR;
+ratioHistory = fixdenorm(expansionRatio);
+
+dynamicKneeWidth = kneeExpHistory * SMOOTH_HISTORY_FACTOR + q_KNEE * SMOOTH_PARAM_FACTOR;
+kneeExpHistory = fixdenorm(dynamicKneeWidth);
+
+smoothRange = rangeHistory * SMOOTH_HISTORY_FACTOR + h_RANGE * SMOOTH_PARAM_FACTOR;
+rangeHistory = fixdenorm(smoothRange);
+
+// =============================================================================
+// CÁLCULO DE EXPANSIÓN
+// =============================================================================
+
+// Usar la variable exacta del código original
+finalEnvelopeDb = in1;
+
+// Llamar al expansor simple
+expansionGainReduction = softkneeSecondOrderExpansor(finalEnvelopeDb, smoothThresholdDb, expansionRatio, dynamicKneeWidth);
+
+// Cálculo directo sin if/else
+gainReductionDb = expansionGainReduction - finalEnvelopeDb;
+gainReductionDbLimited = max(gainReductionDb, smoothRange);  // RANGE siempre limita igual
+
+// =============================================================================
+// SALIDA
+// =============================================================================
+out1 = gainReductionDbLimited;

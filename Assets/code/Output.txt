@@ -1,0 +1,149 @@
+// =============================================================================
+// OUTPUT BLOCK - Procesamiento de Salida (EXPANDER)
+// =============================================================================
+// Incluye: Makeup Gain, Parallel Expansion, Dry/Wet Mix, Softclip y modo Delta.
+//
+// SISTEMA DE LOOKAHEAD:
+// Este bloque LEE las señales dry retrasadas desde InputTrim usando el valor
+// de lookahead calculado por GainCore (in6), manteniendo sincronía perfecta
+// entre todas las señales procesadas y sin procesar.
+//
+// ENTRADAS:
+// - in1: Señal L expandida (desde Gain Application)
+// - in2: Señal R expandida (desde Gain Application)
+// - in3: Señal L original (LEERÁ desde delay de InputTrim con lookahead)
+// - in4: Señal R original (LEERÁ desde delay de InputTrim con lookahead)
+// - in5: Gain reduction en dB (desde Gain Calculation)
+// - in6: Lookahead en muestras (desde Gain Application para sincronización)
+// - in7: Señal sidechain normalizada (para solo SC)
+//
+// SALIDAS:
+// - out1: Señal L final
+// - out2: Señal R final
+
+// PARÁMETROS
+Param i_MAKEUP(-12, min=-12, default=0, max=12);      // Makeup gain (dB)
+Param o_DRYWET(0, min=0, default=1, max=1);           // Dry/Wet mix
+Param u_SOFTCLIP(0, min=0, default=0, max=1);         // Softclip amount
+Param v_DELTA(0, min=0, default=0, max=1);            // Delta mode
+Param p_BYPASS(0, min=0, default=0, max=1);           // Bypass
+Param m_SOLOSC(0, min=0, default=0, max=1);           // Solo sidechain signal
+
+// DELAYS para dry signal
+Delay leftInputDelay(0.025 * samplerate);
+Delay rightInputDelay(0.025 * samplerate);
+Delay sidechainWriteDelay(0.025 * samplerate);
+
+// HISTORIAS para smoothing
+History makeupGainHistory(0);
+History dryWetMixHistory(0);
+History softclipHistory(0);
+History deltaModeHistory(0);
+History bypassAmountHistory(0);
+History soloSidechainHistory(0);
+History reductionHistLeft(0);
+History reductionHistRight(0);
+
+// CONSTANTES
+SMOOTH_HISTORY_FACTOR = 0.999;
+SMOOTH_PARAM_FACTOR = 0.001;
+
+// =============================================================================
+// SMOOTHING DE PARÁMETROS
+// =============================================================================
+smoothMakeupGain = makeupGainHistory * SMOOTH_HISTORY_FACTOR + i_MAKEUP * SMOOTH_PARAM_FACTOR;
+makeupGainHistory = fixdenorm(smoothMakeupGain);
+
+smoothDryWetMix = dryWetMixHistory * SMOOTH_HISTORY_FACTOR + o_DRYWET * SMOOTH_PARAM_FACTOR;
+dryWetMixHistory = fixdenorm(smoothDryWetMix);
+
+smoothSoftclip = softclipHistory * SMOOTH_HISTORY_FACTOR + u_SOFTCLIP * SMOOTH_PARAM_FACTOR;
+softclipHistory = fixdenorm(smoothSoftclip);
+
+smoothDeltaMode = deltaModeHistory * SMOOTH_HISTORY_FACTOR + v_DELTA * SMOOTH_PARAM_FACTOR;
+deltaModeHistory = fixdenorm(smoothDeltaMode);
+
+bypassInverted = 1 - p_BYPASS;
+smoothBypassAmount = bypassAmountHistory * SMOOTH_HISTORY_FACTOR + bypassInverted * SMOOTH_PARAM_FACTOR;
+bypassAmountHistory = fixdenorm(smoothBypassAmount);
+
+smoothSoloSidechain = soloSidechainHistory * SMOOTH_HISTORY_FACTOR + m_SOLOSC * SMOOTH_PARAM_FACTOR;
+soloSidechainHistory = fixdenorm(smoothSoloSidechain);
+
+// =============================================================================
+// DELAYS PARA SEÑAL DRY
+// =============================================================================
+// Escribir señales originales
+leftInputDelay.write(in3);
+rightInputDelay.write(in4);
+sidechainWriteDelay.write(in7);
+
+// Leer con mismo delay que las señales expandidas
+leftDelayedForMixing = leftInputDelay.read(in6, interp="step");
+rightDelayedForMixing = rightInputDelay.read(in6, interp="step");
+sidechainDelayedWrite = sidechainWriteDelay.read(in6, interp="step");
+
+// =============================================================================
+// MODO DELTA - Bypass automático cuando está activo
+// =============================================================================
+effectiveDryWetMix = mix(smoothDryWetMix, 1, smoothDeltaMode);
+effectiveSoftclip = mix(smoothSoftclip, 0, smoothDeltaMode);
+
+// =============================================================================
+// MODO DELTA - Señal diferencia
+// =============================================================================
+// Calcular señal delta (lo que se quitó)
+leftDeltaSignal = leftDelayedForMixing - in1;
+rightDeltaSignal = rightDelayedForMixing - in2;
+
+// Mezclar con señal expandida
+leftWithDelta = mix(in1, leftDeltaSignal, smoothDeltaMode);
+rightWithDelta = mix(in2, rightDeltaSignal, smoothDeltaMode);
+
+// =============================================================================
+// MAKEUP GAIN (sin AUTO GAIN para simplificar)
+// =============================================================================
+// Cuando DELTA está activo, forzar makeup a 0dB
+finalMakeupDbWithDelta = mix(smoothMakeupGain, 0, smoothDeltaMode);
+makeupLinear = dbtoa(finalMakeupDbWithDelta);
+
+// Aplicar makeup
+leftWithMakeup = leftWithDelta * makeupLinear;
+rightWithMakeup = rightWithDelta * makeupLinear;
+
+// WET-ONLY SOFTCLIP (antes del Dry/Wet)
+maxOutput = 0.989; // Limitar a -0.1 dBFS para dejar headroom
+
+// Canal izquierdo (wet)
+wetInL = leftWithMakeup;
+wetSatL = (wetInL > 0) ? (tanh(wetInL * 1.2) * 0.833)
+                       : (tanh(wetInL * 0.8) * 1.25);
+wetSatL = clamp(wetSatL, -maxOutput, maxOutput);
+leftParallelMixed = mix(wetInL, wetSatL, effectiveSoftclip);
+
+// Canal derecho (wet)
+wetInR = rightWithMakeup;
+wetSatR = (wetInR > 0) ? (tanh(wetInR * 1.2) * 0.833)
+                       : (tanh(wetInR * 0.8) * 1.25);
+wetSatR = clamp(wetSatR, -maxOutput, maxOutput);
+rightParallelMixed = mix(wetInR, wetSatR, effectiveSoftclip);
+
+// DRY/WET MIX
+leftDryWetMixed  = mix(leftDelayedForMixing,  leftParallelMixed,  effectiveDryWetMix);
+rightDryWetMixed = mix(rightDelayedForMixing, rightParallelMixed, effectiveDryWetMix);
+
+// Solo sidechain
+leftWithSidechain  = mix(leftDryWetMixed,  sidechainDelayedWrite, smoothSoloSidechain);
+rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain);
+
+// BYPASS FINAL + SALIDAS
+leftFinalOutput  = mix(leftDelayedForMixing,  leftWithSidechain,  smoothBypassAmount);
+rightFinalOutput = mix(rightDelayedForMixing, rightWithSidechain, smoothBypassAmount);
+out1 = fixdenorm(leftFinalOutput);
+out2 = fixdenorm(rightFinalOutput);
+
+// =============================================================================
+// SALIDAS
+// =============================================================================
+out1 = leftFinalOutput;
+out2 = rightFinalOutput;

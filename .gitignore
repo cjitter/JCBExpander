@@ -1,0 +1,36 @@
+**/.DS_Store
+tools/
+Max/GenExpr.txt
+zOld/
+
+# Carpetas de build
+build/
+cmake-build-*/
+build-xcode/
+
+# Archivos temporales de testing
+pluginval_temp/
+pluginval_logs/
+Testing/
+
+# Archivos CLion
+.idea/
+CLAUDE.md
+
+# Scripts manuales de compilación final plugins mediante xcode toolchain
+build-xcode-aax-release.sh
+build-xcode-vst3-au-release.sh
+build-xcode-au_script.sh
+build-xcode-vst3_script.sh
+
+HIERARCHICAL_PRESETS_IMPLEMENTATION.md
+JCB_Delta_Mode_Fix.md
+JCB_Latency_Lookahead_Study.md
+JUCE_ASSERTIONS_RESUELTOS.md
+PRESET_COMBOBOX_ANALYSIS.md
+Assets/code/GenExpr_feedback0_reorder.patch
+PROCESSBLOCK_BYPASSED_ASYNCUPDATER_SOLUTION.md
+JCBExpander_Preset_System_Implementation.md
+JUCE_Gen_Bypass_Lookahead_Integration_Guide.md
+Implementación bypass robusto.txt
+Impl_bypass_robusto.txt

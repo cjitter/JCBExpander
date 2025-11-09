@@ -1,0 +1,112 @@
+// =============================================================================
+// DETECTOR BLOCK - Detección de Envolvente (EXPANDER)
+// =============================================================================
+// Sistema de detección Sharp con Peak/RMS mixing y extra smoothing
+// Optimizado para expansión con algoritmo Sharp únicamente
+//
+// ENTRADA:
+// - in1: Señal filtrada de sidechain (desde bloque Filters)
+//
+// SALIDA:
+// - out1: Envolvente en dB para cálculo de ganancia
+
+// PARÁMETROS
+Param d_ATK(5, min=0.1, default=5, max=250);          // Attack time (ms)
+Param e_REL(30, min=0.1, default=30, max=1000);       // Release time (ms)
+Param f_HOLD(0, min=0, default=0, max=500);           // Hold time (ms)
+Param g_REACT(0, min=0, default=0, max=1);            // Peak/RMS mix (0=Peak, 1=RMS)
+Param z_SMOOTH(0, min=0, default=0, max=1);           // Extra smoothing amount
+
+// HISTORIAS Y DELAYS
+Delay rmsDelay(500);                                   // Buffer para RMS sliding
+History rmsSum(0);
+
+// Sharp detector (único algoritmo para expansor)
+History releaseHistSharp(0);
+History attackHistSharp(0);
+History extraSmoothHistSharp(0);
+
+// Variables para HOLD
+History held_peak_sharp(0);
+History hold_counter_sharp(0);
+
+// =============================================================================
+// COEFICIENTES DE TIEMPO
+// =============================================================================
+attack_ms = max(0.05, d_ATK);
+release_ms = max(0.1, e_REL);
+attack_coeff = exp(-1 / (attack_ms * samplerate * 0.001));
+release_coeff = exp(-1 / (release_ms * samplerate * 0.001));
+
+// =============================================================================
+// RMS SHARP - Sliding RMS con ventana corta
+// =============================================================================
+rms_window = max(1, floor(25 * (samplerate / 48000)));
+rms_window_inv = 1 / rms_window;
+input_squared = in1 * in1;
+oldest_sq = rmsDelay.read(rms_window, interp="none");
+rms_sum_new = (input_squared + rmsSum) - oldest_sq;
+rms_sum_clipped = max(0, rms_sum_new);
+rms_value_sharp = sqrt(rms_sum_clipped * rms_window_inv);
+rmsSum = fixdenorm(rms_sum_clipped);         // Actualizar suma
+rmsDelay.write(input_squared);
+
+// =============================================================================
+// ALGORITMO SHARP DETECTOR - Respuesta rápida y precisa CON HOLD
+// =============================================================================
+peakEnvSharp = abs(in1);
+env_mix_sharp = mix(peakEnvSharp, rms_value_sharp, g_REACT);
+release_env_175 = releaseHistSharp * release_coeff;
+env_post_release_176 = max(env_mix_sharp, release_env_175);
+
+// HOLD - Mantener el nivel por el tiempo especificado
+hold_samples = mstosamps(f_HOLD);
+hold_env_sharp = env_post_release_176;  // Por defecto usar el valor actual
+
+if(env_post_release_176 > held_peak_sharp) {
+    // La señal subió - actualizar pico y resetear contador
+    held_peak_sharp = env_post_release_176;
+    hold_counter_sharp = 0;
+    hold_env_sharp = held_peak_sharp;
+}
+else {
+    // La señal bajó - verificar si estamos en hold
+    hold_counter_sharp = min(hold_counter_sharp + 1, hold_samples);
+    if(hold_counter_sharp < hold_samples) {
+        // Aún en hold - mantener el nivel pico Y congelar el release
+        hold_env_sharp = held_peak_sharp;
+        env_post_release_176 = held_peak_sharp;  // IMPORTANTE: Congelar el release
+    }
+    else {
+        // Hold terminado - permitir que caiga
+        hold_env_sharp = env_post_release_176;
+        held_peak_sharp = env_post_release_176;
+    }
+}
+
+// Aplicar attack usando el valor con hold
+attack_env_177 = attackHistSharp * attack_coeff;
+attack_mix_178 = ((1 - attack_coeff) * hold_env_sharp) + (attack_coeff * attack_env_177);
+sharpEnvelopeFinal = max(attack_mix_178, 1e-06);
+releaseHistSharp = fixdenorm(env_post_release_176);
+attackHistSharp = fixdenorm(attack_mix_178);
+
+// =============================================================================
+// EXTRA SMOOTHING POST-DETECCIÓN - Suavizado adicional configurable
+// =============================================================================
+smooth_amount_shaped = pow(z_SMOOTH, 2.5);
+smooth_time_ms = mix(0.001, 100, smooth_amount_shaped);
+extra_smooth_coeff = exp(-1 / (smooth_time_ms * samplerate * 0.001));
+
+// Salida en dB con smoothing opcional
+expr_algo0 = atodb(sharpEnvelopeFinal);
+if(z_SMOOTH >= 0.001) {
+    extraSmoothedSharpEnv = (extraSmoothHistSharp * extra_smooth_coeff) + (sharpEnvelopeFinal * (1 - extra_smooth_coeff));
+    extraSmoothHistSharp = fixdenorm(extraSmoothedSharpEnv);
+    expr_algo0 = atodb(max(extraSmoothedSharpEnv, 1e-06));
+}
+
+// =============================================================================
+// SALIDA
+// =============================================================================
+out1 = expr_algo0;

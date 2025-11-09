@@ -1,0 +1,68 @@
+// =============================================================================
+// GAIN APPLICATION BLOCK - Aplicación de Reducción de Ganancia (EXPANDER)
+// =============================================================================
+// Aplica la reducción de ganancia calculada a las señales de audio
+//
+// SISTEMA DE LOOKAHEAD:
+// Este bloque LEE las señales retrasadas desde los delays escritos por InputTrim,
+// usando el parámetro n_LOOKAHEAD. Las señales de audio se retrasan mientras
+// la detección trabaja con señal actual, evitando overshooting en transientes.
+//
+// ENTRADAS:
+// - in1: Señal audio L (LEE desde delay de InputTrim con lookahead)
+// - in2: Señal audio R (LEE desde delay de InputTrim con lookahead)
+// - in3: Gain reduction en dB (desde Gain Calculation)
+//
+// SALIDAS:
+// - out1: Señal L expandida
+// - out2: Señal R expandida
+// - out3: Factor de gain reduction lineal (para medidor)
+// - out4: Lookahead en muestras para sincronización con Output
+
+// PARÁMETROS
+Param n_LOOKAHEAD(0, min=0, default=0, max=10);       // Lookahead time (ms)
+
+// DELAYS para lookahead
+Delay leftOutputDelay(0.025 * samplerate);
+Delay rightOutputDelay(0.025 * samplerate);
+
+// HISTORIAS para smoothing
+History lookaheadHistory(0);
+
+// =============================================================================
+// LOOKAHEAD SMOOTHING (ULTRA LENTO)
+// =============================================================================
+smoothLookahead = lookaheadHistory * 0.999 + n_LOOKAHEAD * 0.001;
+lookaheadHistory = fixdenorm(smoothLookahead);
+
+// Convertir tiempo de lookahead (ms) a muestras
+lookaheadSamples = mstosamps(smoothLookahead);
+
+// =============================================================================
+// SISTEMA DE LOOKAHEAD
+// =============================================================================
+// Escribir señales actuales en los delays
+leftOutputDelay.write(in1);
+rightOutputDelay.write(in2);
+
+// Leer señales retrasadas para expansión (delayed audio)
+leftDelayedForCompression = leftOutputDelay.read(lookaheadSamples, interp="step");
+rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
+
+// =============================================================================
+// APLICACIÓN DE GAIN REDUCTION
+// =============================================================================
+// Convertir gain reduction de dB a lineal
+gainReductionLinear = dbtoa(in3);
+
+// Aplicar reducción a las señales retrasadas
+leftCompressed = leftDelayedForCompression * gainReductionLinear;
+rightCompressed = rightDelayedForCompression * gainReductionLinear;
+
+// =============================================================================
+// SALIDAS
+// =============================================================================
+out1 = leftCompressed;
+out2 = rightCompressed;
+out3 = gainReductionLinear;    // Para medidor UI
+out4 = lookaheadSamples;       // Lookahead en muestras para sincronización

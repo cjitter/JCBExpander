@@ -1,0 +1,851 @@
+// =============================================================================
+// FUNCIÓN EXPANSOR REDISEÑADA - Comportamiento progresivo
+// =============================================================================
+
+// Función SIMPLE del expansor
+softkneeSecondOrderExpansor(xg, T, R, W) {
+    _softkneeSecondOrderExpansor_ret_1 = 0;
+    
+    // Zona sutil extendida (1.0 a 6.0) - expansión muy reducida
+    if(R <= 6.0) {
+        // Factor que va de 0 a 1 entre ratio 1 y 6
+        subtle_factor = clamp((R - 1.0) / 5.0, 0, 1);
+        // Curva muy suave que gradualmente llega a 0.5 en ratio=6
+        gentle_expansion = pow(subtle_factor, 2.5) * 0.5;  // Máximo 50% de expansión en ratio=6
+        
+        // Calcular expansión normal
+        normal_expansion = 0;
+        if((2 * (xg - T)) > W) {
+            normal_expansion = xg;
+        }
+        else if((2 * (abs(xg - T))) > ((-1) * W)) {
+            normal_expansion = xg - ((pow((xg - T) - (W / 2), 2) * (R - 1)) / (2 * W));
+        }
+        else if((2 * (xg - T)) <= ((-1) * W)) {
+            normal_expansion = T + ((xg - T) / R);
+        }
+        
+        // Aplicar expansión gradual y sutil
+        _softkneeSecondOrderExpansor_ret_1 = mix(xg, normal_expansion, gentle_expansion);
+    }
+    else {
+        // A partir de 6:1 - expansión normal y más agresiva
+        if((2 * (xg - T)) > W) {
+            _softkneeSecondOrderExpansor_ret_1 = xg;
+        }
+        else if((2 * (abs(xg - T))) > ((-1) * W)) {
+            _softkneeSecondOrderExpansor_ret_1 = xg - ((pow((xg - T) - (W / 2), 2) * (R - 1)) / (2 * W));
+        }
+        else if((2 * (xg - T)) <= ((-1) * W)) {
+            _softkneeSecondOrderExpansor_ret_1 = T + ((xg - T) / R);
+        }
+    }
+    
+    return _softkneeSecondOrderExpansor_ret_1;
+}
+
+// =============================================================================
+// PARÁMETROS DEL EXPANSOR
+// =============================================================================
+
+// Parámetros principales
+Param a_TRIM(-12, min=-12, default=0, max=12);        // Input trim gain (dB)
+Param b_THD(-60, min=-60, default=-18, max=0);        // Threshold (dB)
+Param c_RATIO(1, min=0.95, default=4, max=40);        // Expansion ratio (aumentado a 40)
+Param d_ATK(0.1, min=0.1, default=5, max=250);        // Attack time (ms)
+Param e_REL(0.1, min=0.1, default=30, max=1000);      // Release time (ms)
+
+Param f_HOLD(0, min=0, default=0, max=500);           // Hold time (ms)
+
+Param i_MAKEUP(-12, min=-12, default=0, max=12);      // Makeup gain (dB)
+Param h_RANGE(-60, min=-60, default=-20, max=0);      // Range width (dB) - para expansor
+Param q_KNEE(1, min=1, default=5, max=20);  		  // min=1 para evitar clicks
+
+Param g_REACT(0, min=0, default=0, max=1);            // Peak/RMS mix (0=Peak, 1=RMS)
+Param z_SMOOTH(0, min=0, default=0, max=1);           // Extra smoothing amount
+
+// Filtros de sidechain
+Param j_HPF(20, min=20, default=20, max=20000);       // Sidechain HPF frequency (Hz)
+Param j_HPFORDER(0, min=0, default=0, max=1);         // HPF order (0=12dB/oct, 1=24dB/oct)
+
+Param k_LPF(20, min=20, default=20000, max=20000);    // Sidechain LPF frequency (Hz)
+Param k_LPFORDER(0, min=0, default=0, max=1);         // LPF order (0=12dB/oct, 1=24dB/oct)
+
+Param l_SC(0, min=0, default=0, max=1);               // Sidechain filter enable
+Param y_SCTRIM(-12, min=-12, default=0, max=12);      // Sidechain input trim (dB)
+
+// Routing y mezcla
+Param r_KEY(0, min=0, default=0, max=1);              // External key input mix
+Param m_SOLOSC(0, min=0, default=0, max=1);           // Solo sidechain signal
+Param o_DRYWET(0, min=0, default=1, max=1);           // Dry/Wet mix (0=Dry, 1=Wet)
+
+Param v_DELTA(0, min=0, default=0, max=1);            // Delta mode (difference signal)
+
+// Características avanzadas
+Param n_LOOKAHEAD(0, min=0, default=0, max=10);       // Lookahead time (ms)
+
+//Param x_AUTOGAIN(0, min=0, default=0, max=1);         // Auto makeup gain enable
+Param u_SOFTCLIP(0, min=0, default=0, max=1);         // Output saturation amount (0=Off, 1=Full)
+
+// Control
+Param p_BYPASS(0, min=0, default=0, max=1);           // Bypass switch
+
+// =============================================================================
+// HISTORIAS Y DELAYS
+// =============================================================================
+
+// Historias para smoothing de parámetros
+History deltaModeHistory(0);           // Para delta mode amount
+
+//History autoGainHistory(0);            // Para auto makeup gain enable
+
+History thresholdHistory(0);           // Para threshold value
+History makeupGainHistory(0);          // Para makeup gain amount
+History soloSidechainHistory(0);       // Para solo sidechain amount
+History bypassAmountHistory(0);        // Para bypass amount
+History keyMixHistory(0);              // Para key input mix
+History dryWetMixHistory(0);           // Para dry/wet mix
+History trimHistory(0);                // Para input trim gain
+History sidechainTrimHistory(0);       // Para sidechain trim gain
+
+// Historias adicionales para smoothing de parámetros
+History ratioHistory(0);              // Para compression ratio
+
+History rangeHistory(0);               // Para range width (en lugar de kneeHistory)
+History kneeExpHistory(0);             // Nueva historia para knee del expansor
+
+History reactHistory(0);              // Para peak/RMS mix
+History smoothAmountHistory(0);       // Para extra smoothing
+History lookaheadHistory(0);          // Para lookahead (con factor especial)
+History hpfFreqHistory(0);            // Para HPF frequency
+History lpfFreqHistory(0);            // Para LPF frequency
+History scEnableHistory(0);           // Para sidechain filter enable
+History softclipHistory(0);           // Para softclip amount
+
+History atkHistory(0);                // Para attack time
+History relHistory(0);                // Para release time
+
+// Historias para filtros de sidechain
+History lpfHistory1(0);                // LPF stage 1 input delay
+History lpfHistory2(0);                // LPF stage 1 output delay z^-1
+History lpfHistory3(0);                // LPF stage 1 input z^-1
+History lpfHistory4(0);                // LPF stage 1 output z^-2
+History lpfHistory5(0);                // LPF stage 2 input delay
+History lpfHistory6(0);                // LPF stage 2 output delay z^-1
+History lpfHistory7(0);                // LPF stage 2 input z^-1
+History lpfHistory8(0);                // LPF stage 2 output z^-2
+History hpfHistory1(0);                // HPF stage 1 output delay z^-1
+History hpfHistory2(0);                // HPF stage 1 input delay
+History hpfHistory3(0);                // HPF stage 1 input z^-1
+History hpfHistory4(0);                // HPF stage 1 output z^-2
+History hpfHistory5(0);                // HPF stage 2 output delay z^-1
+History hpfHistory6(0);                // HPF stage 2 input delay
+History hpfHistory7(0);                // HPF stage 2 input z^-1
+History hpfHistory8(0);                // HPF stage 2 output z^-2
+
+// Historias para smoothing de orden de filtros
+History hpfOrderHistory(0);            // Para suavizar cambio de orden HPF
+History lpfOrderHistory(0);            // Para suavizar cambio de orden LPF
+
+// Nueva historia para detección de transientes (auto-release simplificado)
+//History transientDetector(0);          // Detector de transientes acumulado
+
+// Delays de lookahead (25ms a 48kHz = 1200 muestras)
+Delay leftOutputDelay(0.025*samplerate);   // Delay señal izquierda para compresión
+Delay rightOutputDelay(0.025*samplerate);  // Delay señal derecha para compresión
+Delay leftInputDelay(0.025*samplerate);    // Delay entrada izquierda para mezcla
+Delay rightInputDelay(0.025*samplerate);   // Delay entrada derecha para mezcla
+Delay sidechainTapDelay(0.025*samplerate); // Delay para tap de sidechain
+Delay sidechainWriteDelay(0.025*samplerate); // Delay para escritura de sidechain
+
+// =============================================================================
+// VARIABLES DE DETECCIÓN DE ENVOLVENTE
+// =============================================================================
+
+// RMS Detection Buffer
+Delay rmsDelay(500);                   // Circular buffer para cálculo RMS (500 muestras)
+History rmsSum(0);                     // Suma acumulada para RMS
+
+//History prevEnvelope(0);               // Envolvente anterior para auto-release
+
+// Sharp Detector (Algoritmo 0) - Respuesta rápida
+History peakEnvSharp(0);               // Detector de picos rápido
+History releaseHistSharp(0);           // Historia de release para sharp
+History attackHistSharp(0);            // Historia de attack para sharp
+History extraSmoothHistSharp(0);       // Extra smoothing para sharp
+
+// Gain Reduction Smoothing
+History reductionHistLeft(0);          // Suavizado de gain reduction canal L
+History reductionHistRight(0);         // Suavizado de gain reduction canal R
+
+// Para el algoritmo Sharp
+History held_peak_sharp(0);      // Nivel pico mantenido durante hold
+History hold_counter_sharp(0);   // Contador de samples en hold
+
+// =============================================================================
+// VARIABLES DE SALIDA Y CONSTANTES
+// =============================================================================
+
+// Variables para almacenar las salidas procesadas
+leftProcessedOutput = 0;               // Salida procesada canal izquierdo
+rightProcessedOutput = 0;              // Salida procesada canal derecho
+
+// Constantes para optimización y legibilidad
+SMOOTH_HISTORY_FACTOR = 0.999;         // Factor de suavizado para valores históricos (99.9%)
+SMOOTH_PARAM_FACTOR = 0.001;           // Factor de suavizado para nuevos parámetros (0.1%)
+LOOKAHEAD_DELAY_SAMPLES = 0.025*samplerate; // Muestras de delay para lookahead
+
+// PROCESAMIENTO PRINCIPAL
+
+// =============================================================================
+// SMOOTHING DE PARÁMETROS - Filtro de primer orden para evitar clicks
+// =============================================================================
+// Implementación: y[n] = a * x[n] + (1-a) * y[n-1]
+// Donde: a = SMOOTH_PARAM_FACTOR (0.001), (1-a) = SMOOTH_HISTORY_FACTOR (0.999)
+// Resultado: Suavizado exponencial con tiempo de respuesta ~1000 muestras
+
+// Parallel Mix Amount - Cantidad de compresión paralela
+
+// Delta Mode Amount - Cantidad de señal diferencia (experimental)
+smoothDeltaMode = (deltaModeHistory * SMOOTH_HISTORY_FACTOR) + (v_DELTA * SMOOTH_PARAM_FACTOR);
+deltaModeHistoryNext = fixdenorm(smoothDeltaMode);
+
+// =============================================================================
+// IMPLEMENTACIÓN DELTA MODE - Bypass automático de procesamiento posterior
+// =============================================================================
+// Cuando DELTA está activo, se bypasean automáticamente:
+// - Auto Gain: se fuerza a 0 (solo makeup manual)
+// - Parallel Compression: se fuerza a 0 (sin compresión paralela)
+// - Dry/Wet: se fuerza a 1 (100% wet)
+// Esto permite escuchar SOLO la señal diferencia sin amplificaciones posteriores
+
+// Crear valores de bypass cuando DELTA está activo
+deltaBypassValue = int(0);  // Valor para forzar auto gain y parallel a 0
+deltaWetValue = int(1);     // Valor para forzar dry/wet a 100% wet
+
+// Aplicar bypass condicional basado en DELTA
+//effectiveAutoGain = mix(smoothAutoGain, deltaBypassValue, smoothDeltaMode);
+
+// Threshold Level - Umbral de compresión en dB
+smoothThresholdDb = (thresholdHistory * SMOOTH_HISTORY_FACTOR) + (b_THD * SMOOTH_PARAM_FACTOR);
+thresholdHistoryNext = fixdenorm(smoothThresholdDb);
+
+// Filter Order Smoothing - Suavizado de orden de filtros
+smoothHpfOrder = (hpfOrderHistory * SMOOTH_HISTORY_FACTOR) + (j_HPFORDER * SMOOTH_PARAM_FACTOR);
+hpfOrderHistoryNext = fixdenorm(smoothHpfOrder);
+smoothLpfOrder = (lpfOrderHistory * SMOOTH_HISTORY_FACTOR) + (k_LPFORDER * SMOOTH_PARAM_FACTOR);
+lpfOrderHistoryNext = fixdenorm(smoothLpfOrder);
+
+// Variables para selección discreta de orden
+hpfOrderDiscrete = 0;
+lpfOrderDiscrete = 0;
+
+// Selección discreta simplificada (solo 2 opciones)
+if(smoothHpfOrder < 0.5) {
+    hpfOrderDiscrete = 0;      // 12 dB/oct (0.0 - 0.49)
+}
+else {
+    hpfOrderDiscrete = 1;      // 24 dB/oct (0.5 - 1.0)
+}
+
+if(smoothLpfOrder < 0.5) {
+    lpfOrderDiscrete = 0;      // 12 dB/oct (0.0 - 0.49)
+}
+else {
+    lpfOrderDiscrete = 1;      // 24 dB/oct (0.5 - 1.0)
+}
+
+// Ratio Smoothing
+smoothRatio = (ratioHistory * SMOOTH_HISTORY_FACTOR) + (c_RATIO * SMOOTH_PARAM_FACTOR);
+ratioHistoryNext = fixdenorm(smoothRatio);
+
+// Range Smoothing
+smoothRange = (rangeHistory * SMOOTH_HISTORY_FACTOR) + (h_RANGE * SMOOTH_PARAM_FACTOR);
+rangeHistoryNext = fixdenorm(smoothRange);
+
+// Knee Smoothing
+smoothKneeExp = (kneeExpHistory * SMOOTH_HISTORY_FACTOR) + (q_KNEE * SMOOTH_PARAM_FACTOR);
+kneeExpHistoryNext = fixdenorm(smoothKneeExp);
+
+// React (Peak/RMS) Smoothing
+smoothReact = (reactHistory * SMOOTH_HISTORY_FACTOR) + (g_REACT * SMOOTH_PARAM_FACTOR);
+reactHistoryNext = fixdenorm(smoothReact);
+
+// Extra Smooth Amount Smoothing
+smoothSmoothAmount = (smoothAmountHistory * SMOOTH_HISTORY_FACTOR) + (z_SMOOTH * SMOOTH_PARAM_FACTOR);
+smoothAmountHistoryNext = fixdenorm(smoothSmoothAmount);
+
+// Attack Time Smoothing
+smoothAttack = (atkHistory * SMOOTH_HISTORY_FACTOR) + (d_ATK * SMOOTH_PARAM_FACTOR);
+atkHistoryNext = fixdenorm(smoothAttack);
+
+// Release Time Smoothing
+smoothRelease = (relHistory * SMOOTH_HISTORY_FACTOR) + (e_REL * SMOOTH_PARAM_FACTOR);
+relHistoryNext = fixdenorm(smoothRelease);
+
+// HPF Frequency Smoothing
+smoothHpfFreq = (hpfFreqHistory * SMOOTH_HISTORY_FACTOR) + (j_HPF * SMOOTH_PARAM_FACTOR);
+hpfFreqHistoryNext = fixdenorm(smoothHpfFreq);
+
+// LPF Frequency Smoothing
+smoothLpfFreq = (lpfFreqHistory * SMOOTH_HISTORY_FACTOR) + (k_LPF * SMOOTH_PARAM_FACTOR);
+lpfFreqHistoryNext = fixdenorm(smoothLpfFreq);
+
+// Sidechain Enable Smoothing
+smoothScEnable = (scEnableHistory * SMOOTH_HISTORY_FACTOR) + (l_SC * SMOOTH_PARAM_FACTOR);
+scEnableHistoryNext = fixdenorm(smoothScEnable);
+
+// Softclip Amount Smoothing
+smoothSoftclip = (softclipHistory * SMOOTH_HISTORY_FACTOR) + (u_SOFTCLIP * SMOOTH_PARAM_FACTOR);
+softclipHistoryNext = fixdenorm(smoothSoftclip);
+
+// Lookahead Smoothing
+//smoothLookahead = (lookaheadHistory * SMOOTH_HISTORY_FACTOR) + (n_LOOKAHEAD * SMOOTH_PARAM_FACTOR);
+//lookaheadHistoryNext = fixdenorm(smoothLookahead);
+
+// Lookahead sin suavizado (passthrough)
+smoothLookahead = n_LOOKAHEAD;
+lookaheadHistoryNext = fixdenorm(smoothLookahead);
+
+// ms -> samples cuantizado a ENTERO
+lookaheadSamples = round(mstosamps(smoothLookahead));
+
+// … y mantener read con step + write-before-read
+//leftDelayedForCompression  = leftOutputDelay.read(lookaheadSamples, interp="step");
+//rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
+//leftDelayedForMixing       = leftInputDelay.read(lookaheadSamples,  interp="step");
+//rightDelayedForMixing      = rightInputDelay.read(lookaheadSamples, interp="step");
+
+
+
+// =============================================================================
+// LOOKAHEAD DELAY SYSTEM - Sistema de delay predictivo
+// =============================================================================
+// El lookahead permite al compresor "ver" la señal antes de que llegue,
+// evitando transientes que causen overshooting. Las señales de audio se retrasan
+// mientras que la detección trabaja con la señal sin retrasar.
+
+// Convertir tiempo de lookahead (ms) a muestras
+lookaheadSamples = mstosamps(smoothLookahead);
+
+// NOTA: Las lecturas de los delays audibles se realizan más abajo,
+// después de escribir en los delays, para asegurar write-before-read
+// (equivalente práctico a feedback 0 y sin +1 muestra implícita).
+
+// =============================================================================
+// MAKEUP GAIN Y SIDECHAIN TAPS
+// =============================================================================
+
+// Makeup Gain - Ganancia de compensación
+smoothMakeupGain = (makeupGainHistory * SMOOTH_HISTORY_FACTOR) + (i_MAKEUP * SMOOTH_PARAM_FACTOR);
+makeupGainHistoryNext = fixdenorm(smoothMakeupGain);
+// Duplicar valor para uso en canales L y R
+leftMakeupGain = smoothMakeupGain;
+rightMakeupGain = leftMakeupGain;
+
+// Sidechain Tap - Señal retrasada para procesamiento de sidechain
+sidechainDelayedTap = sidechainTapDelay.read(lookaheadSamples, interp="step");
+
+// Solo Sidechain - Monitoreo de señal de sidechain
+smoothSoloSidechain = (soloSidechainHistory * SMOOTH_HISTORY_FACTOR) + (m_SOLOSC * SMOOTH_PARAM_FACTOR);
+soloSidechainHistoryNext = fixdenorm(smoothSoloSidechain);
+
+// Sidechain Write Tap - Señal retrasada para escritura
+sidechainDelayedWrite = sidechainWriteDelay.read(lookaheadSamples, interp="step");
+
+// =============================================================================
+// CONTROL PARAMS - Parámetros de control y bypass
+// =============================================================================
+
+// Bypass - Activación/desactivación del efecto
+bypassInverted = 1 - p_BYPASS;               // Invertir lógica (1=activo, 0=bypass)
+smoothBypassAmount = (bypassAmountHistory * SMOOTH_HISTORY_FACTOR) + (bypassInverted * SMOOTH_PARAM_FACTOR);
+bypassAmountHistoryNext = fixdenorm(smoothBypassAmount);
+
+// Key Mix - Mezcla entre señal principal y external key
+smoothKeyMix = (keyMixHistory * SMOOTH_HISTORY_FACTOR) + (r_KEY * SMOOTH_PARAM_FACTOR);
+keyMixHistoryNext = fixdenorm(smoothKeyMix);
+
+// Dry/Wet Mix - Balance entre señal original y procesada
+smoothDryWetMix = (dryWetMixHistory * SMOOTH_HISTORY_FACTOR) + (o_DRYWET * SMOOTH_PARAM_FACTOR);
+dryWetMixHistoryNext = fixdenorm(smoothDryWetMix);
+
+// Aplicar bypass de dry/wet cuando DELTA está activo
+effectiveDryWetMix = mix(smoothDryWetMix, deltaWetValue, smoothDeltaMode);
+
+// =============================================================================
+// INPUT PROCESSING - Procesamiento de entradas con trim
+// =============================================================================
+// Trim Principal - Ganancia de entrada
+smoothTrimGain = (trimHistory * SMOOTH_HISTORY_FACTOR) + (a_TRIM * SMOOTH_PARAM_FACTOR);
+trimHistoryNext = fixdenorm(smoothTrimGain);
+trimGainLinear = dbtoa(smoothTrimGain);
+
+// Aplicar trim a entradas
+leftTrimmed = in1 * trimGainLinear;
+rightTrimmed = in2 * trimGainLinear;
+
+// Escribir señales en delays (WRITE FIRST → equivale a feedback 0)
+leftInputDelay.write(in1);            // DRY (para mezcla/bypass)
+rightInputDelay.write(in2);           // DRY (para mezcla/bypass)
+leftOutputDelay.write(leftTrimmed);   // WET (tras TRIM) para compresión
+rightOutputDelay.write(rightTrimmed); // WET (tras TRIM) para compresión
+
+// Ahora SÍ: leer señales retrasadas con write-before-read
+leftDelayedForCompression  = leftOutputDelay.read(lookaheadSamples, interp="step");
+rightDelayedForCompression = rightOutputDelay.read(lookaheadSamples, interp="step");
+
+// Medidores principales (señales que entran a la compresión)
+out4 = fixdenorm(leftDelayedForCompression);
+out5 = fixdenorm(rightDelayedForCompression);
+
+// Señales retrasadas para mezcla final
+leftDelayedForMixing  = leftInputDelay.read(lookaheadSamples, interp="step");
+rightDelayedForMixing = rightInputDelay.read(lookaheadSamples, interp="step");
+
+// Crear señal mono de entrada principal
+mainSignalMono = ((rightTrimmed + leftTrimmed)) * 0.707;  // Suma mono de entrada principal
+trimGainReference = trimGainLinear;           // Referencia para normalización posterior
+
+// Sidechain Trim - Ganancia de entrada de sidechain
+smoothSidechainTrimGain = (sidechainTrimHistory * SMOOTH_HISTORY_FACTOR) + (y_SCTRIM * SMOOTH_PARAM_FACTOR);
+sidechainTrimHistoryNext = fixdenorm(smoothSidechainTrimGain);
+sidechainTrimGainLinear = dbtoa(smoothSidechainTrimGain);
+sidechainTrimReference = sidechainTrimGainLinear;  // Referencia para uso posterior
+
+// Aplicar trim a entradas de sidechain
+leftSidechainTrimmed = in3 * sidechainTrimReference;
+rightSidechainTrimmed = in4 * sidechainTrimReference;
+
+// Asignar salidas de sidechain (sin delay por ahora)
+out6 = fixdenorm(leftSidechainTrimmed);
+out7 = fixdenorm(rightSidechainTrimmed);
+
+// Crear señal mono de sidechain
+sidechainSignalMono = ((rightSidechainTrimmed + leftSidechainTrimmed)) * 0.707;  // Suma mono de sidechain
+
+// Key mixing - Mezcla entre señal principal y external key input
+keyMixedSignal = mix(mainSignalMono, sidechainSignalMono, smoothKeyMix);
+
+// Control params asignados directamente
+ONSIDECHAIN = smoothScEnable;
+REACT = smoothReact;
+
+//AUTO_RELEASE = s_AUTORELEASE;  // Directo, sin SPEED
+
+EXTRA_SMOOTH = smoothSmoothAmount;
+
+// =============================================================================
+// FILTROS DE SIDECHAIN - BIQUAD BUTTERWORTH (Robert Bristow-Johnson)
+// =============================================================================
+// Implementación de filtros biquad de 2º orden (12 dB/oct) con opción de
+// cascadear para 4º orden (24 dB/oct). Transición suave entre órdenes.
+// Basado en las fórmulas de Robert Bristow-Johnson's Audio EQ Cookbook
+
+// Variables de salida de filtros
+lpfFinalSignal = 0;
+hpfFinalSignal = 0;
+
+// Q factor para respuesta Butterworth (maximally flat)
+BUTTERWORTH_Q = 1.0;                         // Q = 1 para respuesta plana sin resonancia
+
+// Coeficientes LPF Butterworth de 2º orden
+omega = ((smoothLpfFreq * twopi)) / samplerate;   // Frecuencia normalizada
+sn = sin(omega);
+cs = cos(omega);
+one_over_Q = 1 / BUTTERWORTH_Q;              // Inverso del Q factor
+alpha = ((sn * 0.5)) * one_over_Q;
+b0 = 1 / ((1 + alpha));                     // Normalización
+a2 = ((((1 - cs)) * 0.5)) * b0;             // Coeficiente feedforward z^-2
+a1 = ((1 - cs)) * b0;                       // Coeficiente feedforward z^-1
+b1 = ((-2 * cs)) * b0;                      // Coeficiente feedback z^-1
+b2 = ((1 - alpha)) * b0;                    // Coeficiente feedback z^-2
+
+// Asignar coeficientes LPF
+lpfCoeffA2 = a2;
+lpfCoeffA1 = a1;
+lpfCoeffA0 = a2;  // a0 = a2 para LPF simétrico
+lpfCoeffB1 = b1;
+lpfCoeffB2 = b2;
+
+// Coeficientes HPF Butterworth de 2º orden
+omega_hpf = ((smoothHpfFreq * twopi)) / samplerate;
+sn_hpf = sin(omega_hpf);
+cs_hpf = cos(omega_hpf);
+alpha_hpf = ((sn_hpf * 0.5)) / BUTTERWORTH_Q;  // Usar mismo Q factor
+b0_hpf = 1 / ((1 + alpha_hpf));
+a_hpf = ((((1 + cs_hpf)) * 0.5)) * b0_hpf;   // Coeficiente feedforward
+a_neg_hpf = (-(1 + cs_hpf)) * b0_hpf;       // Coeficiente feedforward negativo
+b1_hpf = ((-2 * cs_hpf)) * b0_hpf;
+b2_hpf = ((1 - alpha_hpf)) * b0_hpf;
+
+// Asignar coeficientes HPF
+hpfCoeffA2 = a_hpf;
+hpfCoeffA1 = a_neg_hpf;
+hpfCoeffA0 = a_hpf;  // a0 = a2 para HPF simétrico
+hpfCoeffB1 = b1_hpf;
+hpfCoeffB2 = b2_hpf;
+
+// Pre-procesar señal de sidechain
+sidechainMixedSignal = keyMixedSignal * 0.707;
+
+// =============================================================================
+// LPF - FILTRO PASO BAJO CON OPCIÓN 12/24 dB/oct
+// =============================================================================
+
+// Primera etapa LPF (12 dB/oct)
+lpfInput = sidechainMixedSignal * lpfCoeffA2;
+lpfFromHistory1 = lpfHistory3 * lpfCoeffA1;
+lpfFromHistory2 = lpfHistory1 * lpfCoeffA0;
+lpfFeedback1 = lpfHistory2 * lpfCoeffB2;
+lpfFeedback2 = lpfHistory4 * lpfCoeffB1;
+lpfFilteredSignal = ((((lpfFromHistory2 + lpfFromHistory1)) + lpfInput)) - ((lpfFeedback2 + lpfFeedback1));
+
+// Actualizar historias LPF primera etapa
+lpfHistory1Next = fixdenorm(lpfHistory3);
+lpfHistory2Next = fixdenorm(lpfHistory4);
+lpfHistory3Next = fixdenorm(sidechainMixedSignal);
+lpfHistory4Next = fixdenorm(lpfFilteredSignal);
+
+// Segunda etapa LPF (para 24 dB/oct)
+lpfStage2Input = lpfFilteredSignal * lpfCoeffA2;
+lpfStage2FromHistory1 = lpfHistory7 * lpfCoeffA1;
+lpfStage2FromHistory2 = lpfHistory5 * lpfCoeffA0;
+lpfStage2Feedback1 = lpfHistory6 * lpfCoeffB2;
+lpfStage2Feedback2 = lpfHistory8 * lpfCoeffB1;
+lpfStage2FilteredSignal = ((((lpfStage2FromHistory2 + lpfStage2FromHistory1)) + lpfStage2Input)) - ((lpfStage2Feedback2 + lpfStage2Feedback1));
+
+// Actualizar historias LPF segunda etapa
+lpfHistory5Next = fixdenorm(lpfHistory7);
+lpfHistory6Next = fixdenorm(lpfHistory8);
+lpfHistory7Next = fixdenorm(lpfFilteredSignal);
+lpfHistory8Next = fixdenorm(lpfStage2FilteredSignal);
+
+// Tercera etapa LPF — desactivada (no usada en 12/24 dB/oct)
+lpfStage3FilteredSignal = lpfStage2FilteredSignal;  // passthrough
+
+// Cuarta etapa LPF — desactivada (no usada en 12/24 dB/oct)
+lpfStage4FilteredSignal = lpfStage3FilteredSignal;  // passthrough
+
+// LPF - Seleccionar salida según orden (solo 12 o 24 dB/oct)
+if(lpfOrderDiscrete == 0) {
+    lpfFinalSignal = lpfFilteredSignal;           // 12 dB/oct (solo etapa 1)
+}
+else {
+    lpfFinalSignal = lpfStage2FilteredSignal;     // 24 dB/oct (etapas 1+2)
+}
+
+// Mezclar señal directa con LPF según ONSIDECHAIN
+lpfMixedSignal = mix(sidechainMixedSignal, lpfFinalSignal, ONSIDECHAIN);
+
+// =============================================================================
+// HPF - FILTRO PASO ALTO CON OPCIÓN 12/24 dB/oct
+// =============================================================================
+
+// Primera etapa HPF (12 dB/oct)
+hpfInput = lpfMixedSignal * hpfCoeffA2;
+hpfFromHistory1 = hpfHistory3 * hpfCoeffA1;
+hpfFromHistory2 = hpfHistory2 * hpfCoeffA0;
+hpfFeedback1 = hpfHistory1 * hpfCoeffB2;
+hpfFeedback2 = hpfHistory4 * hpfCoeffB1;
+hpfFilteredSignal = ((((hpfFromHistory2 + hpfFromHistory1)) + hpfInput)) - ((hpfFeedback2 + hpfFeedback1));
+
+// Actualizar historias HPF primera etapa
+hpfHistory1Next = fixdenorm(hpfHistory4);
+hpfHistory2Next = fixdenorm(hpfHistory3);
+hpfHistory3Next = fixdenorm(lpfMixedSignal);
+hpfHistory4Next = fixdenorm(hpfFilteredSignal);
+
+// Segunda etapa HPF (para 24 dB/oct)
+hpfStage2Input = hpfFilteredSignal * hpfCoeffA2;
+hpfStage2FromHistory1 = hpfHistory7 * hpfCoeffA1;
+hpfStage2FromHistory2 = hpfHistory6 * hpfCoeffA0;
+hpfStage2Feedback1 = hpfHistory5 * hpfCoeffB2;
+hpfStage2Feedback2 = hpfHistory8 * hpfCoeffB1;
+hpfStage2FilteredSignal = ((((hpfStage2FromHistory2 + hpfStage2FromHistory1)) + hpfStage2Input)) - ((hpfStage2Feedback2 + hpfStage2Feedback1));
+
+// Actualizar historias HPF segunda etapa
+hpfHistory5Next = fixdenorm(hpfHistory8);
+hpfHistory6Next = fixdenorm(hpfHistory7);
+hpfHistory7Next = fixdenorm(hpfFilteredSignal);
+hpfHistory8Next = fixdenorm(hpfStage2FilteredSignal);
+
+// Tercera etapa HPF — desactivada (no usada en 12/24 dB/oct)
+hpfStage3FilteredSignal = hpfStage2FilteredSignal;  // passthrough
+
+// Cuarta etapa HPF — desactivada (no usada en 12/24 dB/oct)
+hpfStage4FilteredSignal = hpfStage3FilteredSignal;  // passthrough
+
+// HPF - Seleccionar salida según orden (solo 12 o 24 dB/oct)
+if(hpfOrderDiscrete == 0) {
+    hpfFinalSignal = hpfFilteredSignal;           // 12 dB/oct (solo etapa 1)
+}
+else {
+    hpfFinalSignal = hpfStage2FilteredSignal;     // 24 dB/oct (etapas 1+2)
+}
+
+// Mezclar señal con HPF según ONSIDECHAIN y obtener señal final de sidechain
+sidechainProcessedSignal = mix(lpfMixedSignal, hpfFinalSignal, ONSIDECHAIN);
+sidechainDetectionSignal = sidechainProcessedSignal;
+
+// =============================================================================
+// DETECCIÓN DE ENVOLVENTE - Sistema 1 algoritmo sharp
+// =============================================================================
+// Los algoritmos y su hibridación han sido elegidos empíricamente por oído
+
+// Detección de envolvente - Preparación de coeficientes
+attack_ms = max(0.05, smoothAttack);
+release_ms = max(0.1, smoothRelease);
+attack_coeff = exp(-1 / ((((attack_ms * samplerate)) * 0.001)));
+release_coeff = exp(-1 / ((((release_ms * samplerate)) * 0.001)));
+
+// =============================================================================
+// RMS SHARP (para ALGO 0) - Sliding RMS con ventana corta
+// =============================================================================
+rms_window = max(1, floor(25 * (samplerate / 48000)));  // Escalar ventana por SR
+rms_window_inv = 1 / rms_window;                        // Precalcular inverso
+input_squared = sidechainDetectionSignal * sidechainDetectionSignal;
+oldest_sq = rmsDelay.read(rms_window, interp="none");   // Leer muestra más antigua
+rms_sum_new = ((input_squared + rmsSum)) - oldest_sq;   // Cálculo incremental
+rms_sum_clipped = max(0, rms_sum_new);                  // Evitar valores negativos
+rms_value_sharp = sqrt(rms_sum_clipped * rms_window_inv); // RMS final
+rmsSum = fixdenorm(rms_sum_clipped);                    // Actualizar suma
+rmsDelay.write(input_squared);                          // Escribir nueva muestra
+
+// =============================================================================
+// ALGORITMO 0: SHARP DETECTOR - Respuesta rápida y precisa CON HOLD
+// =============================================================================
+peakEnvSharp = abs(sidechainDetectionSignal);
+env_mix_sharp = mix(peakEnvSharp, rms_value_sharp, REACT);
+release_env_175 = releaseHistSharp * release_coeff;
+env_post_release_176 = max(env_mix_sharp, release_env_175);
+
+// HOLD - Mantener el nivel por el tiempo especificado
+hold_samples = mstosamps(f_HOLD);
+hold_env_sharp = env_post_release_176;  // Por defecto usar el valor actual
+
+if(env_post_release_176 > held_peak_sharp) {
+    // La señal subió - actualizar pico y resetear contador
+    held_peak_sharp = env_post_release_176;
+    hold_counter_sharp = 0;
+    hold_env_sharp = held_peak_sharp;
+}
+else {
+    // La señal bajó - verificar si estamos en hold
+    hold_counter_sharp = min(hold_counter_sharp + 1, hold_samples);
+    if(hold_counter_sharp < hold_samples) {
+        // Aún en hold - mantener el nivel pico Y congelar el release
+        hold_env_sharp = held_peak_sharp;
+        env_post_release_176 = held_peak_sharp;  // IMPORTANTE: Congelar el release
+    }
+    else {
+        // Hold terminado - permitir que caiga
+        hold_env_sharp = env_post_release_176;
+        held_peak_sharp = env_post_release_176;
+    }
+}
+
+// Aplicar attack usando el valor con hold
+attack_env_177 = attackHistSharp * attack_coeff;
+attack_mix_178 = (((1 - attack_coeff)) * hold_env_sharp) + (attack_coeff * attack_env_177);
+sharpEnvelopeFinal = max(attack_mix_178, 1e-06);
+releaseHistSharp = fixdenorm(env_post_release_176);
+attackHistSharp = fixdenorm(attack_mix_178);
+
+// =============================================================================
+// EXTRA SMOOTHING POST-DETECCIÓN - Suavizado adicional configurable
+// =============================================================================
+smooth_amount_shaped = pow(EXTRA_SMOOTH, 2.5);         // Curva exponencial para control musical
+smooth_time_ms = mix(0.001, 100, smooth_amount_shaped); // Mapeo a rango temporal
+extra_smooth_coeff = exp(-1 / ((((smooth_time_ms * samplerate)) * 0.001))); // Coeficiente de filtro
+
+// Algoritmo 0 - Salida en dB con smoothing opcional
+expr_algo0 = atodb(sharpEnvelopeFinal);               // Conversión a dB base
+if(EXTRA_SMOOTH >= 0.001) {                           // Solo si hay smoothing significativo
+    extraSmoothedSharpEnv = (extraSmoothHistSharp * extra_smooth_coeff) + (sharpEnvelopeFinal * ((1 - extra_smooth_coeff)));
+    extraSmoothHistSharp = fixdenorm(extraSmoothedSharpEnv);
+    expr_algo0 = atodb(max(extraSmoothedSharpEnv, 1e-06)); // Evitar log(0)
+}
+
+// =============================================================================
+// SELECTOR Y MORPHING DE ALGORITMOS - Transición continua sin saltos
+// =============================================================================
+
+// Usar directamente la salida del algoritmo Sharp
+envelopeDetectorOutput = expr_algo0;  // Solo Sharp
+finalEnvelopeDb = envelopeDetectorOutput;
+
+// =============================================================================
+// COMPENSACIÓN DE GANANCIA PARA SOLO SIDECHAIN - Evitar saltos abruptos
+// =============================================================================
+unitaryReference = int(1);                           // Valor de referencia unitario
+trimCompensationFactor = unitaryReference / trimGainReference; // Factor de compensación inverso al trim
+sidechainTrimCompensated = sidechainDetectionSignal * trimCompensationFactor; // Aplicar compensación de trim
+normalizedSidechainSignal = sidechainTrimCompensated; // Señal compensada para monitoreo
+
+// =============================================================================
+// PROCESAMIENTO DE SALIDA - Canal Izquierdo
+// =============================================================================
+expansionRatio = smoothRatio;
+dynamicKneeWidth = smoothKneeExp;
+
+// Llamar al expansor simple
+expansionGainReduction = softkneeSecondOrderExpansor(finalEnvelopeDb, smoothThresholdDb, expansionRatio, dynamicKneeWidth);
+
+// Cálculo directo sin if/else
+gainReductionDb = expansionGainReduction - finalEnvelopeDb;
+gainReductionDbLimited = max(gainReductionDb, smoothRange);  // RANGE siempre limita igual
+gainReductionLinear = dbtoa(gainReductionDbLimited);
+
+expandedLeft = leftDelayedForCompression * gainReductionLinear;
+
+// MODO DELTA - Señal diferencia (experimental)
+delta_control = clamp(smoothDeltaMode, 0, 1);                 // Asegurar rango válido
+delta_signal = leftDelayedForCompression - expandedLeft;      // Diferencia = lo que se quitó
+leftWithDelta = mix(expandedLeft, delta_signal, delta_control); // Mezclar según control
+
+final_makeup_db = leftMakeupGain;
+
+// Cuando DELTA está activo, forzar makeup a 0dB
+finalMakeupDbWithDelta = mix(final_makeup_db, 0, smoothDeltaMode); // 0dB cuando DELTA=1
+makeup_linear = dbtoa(finalMakeupDbWithDelta);            // Convertir a factor lineal
+leftWithMakeup = leftWithDelta * makeup_linear;               // Aplicar makeup final
+
+// Sin compresión paralela - pasar directamente la señal procesada
+// WET-ONLY SOFTCLIP (antes del Dry/Wet)
+maxOutput = 0.989;
+saturationAmount = clamp(smoothSoftclip, 0, 1);
+// En modo DELTA desactivamos la saturación
+effectiveSaturationAmount = mix(saturationAmount, 0, smoothDeltaMode);
+
+wetInL = leftWithMakeup;
+wetSatL = (wetInL > 0) ? (tanh(wetInL * 1.2) * 0.833)
+                       : (tanh(wetInL * 0.8) * 1.25);
+wetSatL = clamp(wetSatL, -maxOutput, maxOutput);
+
+// Mezcla entre WET limpio y WET saturado
+leftParallelMixed = mix(wetInL, wetSatL, effectiveSaturationAmount);
+
+// MIX DRY/WET - Balance entre señal original y procesada
+leftDryWetMixed = mix(leftDelayedForMixing, leftParallelMixed, effectiveDryWetMix); // Usar effectiveDryWetMix (afectado por DELTA)
+leftWithSidechain = mix(leftDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain); // Solo sidechain
+
+// Bypass final (sin softclip aquí)
+leftFinalOutput = mix(leftDelayedForMixing, leftWithSidechain, smoothBypassAmount); // Bypass final
+out1 = fixdenorm(leftFinalOutput);
+
+// =============================================================================
+// PROCESAMIENTO DE SALIDA - Canal Derecho
+// =============================================================================
+// Idéntico al canal izquierdo pero con variables propias para claridad.
+
+// EXPANSIÓN BÁSICA - Usar los valores ya calculados del canal izquierdo
+// No necesitamos recalcular expansionGainReduction porque es igual para ambos canales
+rightGainReductionDb = gainReductionDbLimited;  // Usar el valor limitado, no el sin limitar
+rightGainReductionLinear = gainReductionLinear;  // Ya calculado arriba
+expandedRight = rightDelayedForCompression * rightGainReductionLinear; // Aplicar expansión
+
+// MODO DELTA - Señal diferencia (experimental)
+rightDeltaControl = clamp(smoothDeltaMode, 0, 1);                // Asegurar rango válido
+rightDeltaSignal = rightDelayedForCompression - expandedRight;   // Diferencia = lo que se quitó
+rightWithDelta = mix(expandedRight, rightDeltaSignal, rightDeltaControl); // Mezclar según control
+
+rightFinalMakeupDb = rightMakeupGain;
+
+// Cuando DELTA está activo, forzar makeup a 0dB
+rightFinalMakeupDbWithDelta = mix(rightFinalMakeupDb, 0, smoothDeltaMode); // 0dB cuando DELTA=1
+rightMakeupLinear = dbtoa(rightFinalMakeupDbWithDelta);         // Convertir a factor lineal
+rightWithMakeup = rightWithDelta * rightMakeupLinear;             // Aplicar makeup final
+
+// Sin compresión paralela - pasar directamente la señal procesada
+// WET-ONLY SOFTCLIP (antes del Dry/Wet)
+maxOutput = 0.989;
+rightSaturationAmount = clamp(smoothSoftclip, 0, 1);
+rightEffectiveSaturationAmount = mix(rightSaturationAmount, 0, smoothDeltaMode);
+
+wetInR = rightWithMakeup;
+wetSatR = (wetInR > 0) ? (tanh(wetInR * 1.2) * 0.833)
+                       : (tanh(wetInR * 0.8) * 1.25);
+wetSatR = clamp(wetSatR, -maxOutput, maxOutput);
+
+// Mezcla entre WET limpio y WET saturado
+rightParallelMixed = mix(wetInR, wetSatR, rightEffectiveSaturationAmount);
+
+// MIX DRY/WET - Balance entre señal original y procesada
+rightDryWetMixed = mix(rightDelayedForMixing, rightParallelMixed, effectiveDryWetMix); // Usar effectiveDryWetMix
+//rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedTap, smoothSoloSidechain); // Solo sidechain
+rightWithSidechain = mix(rightDryWetMixed, sidechainDelayedWrite, smoothSoloSidechain); // Solo sidechain
+
+// Bypass final (sin softclip aquí)
+rightFinalOutput = mix(rightDelayedForMixing, rightWithSidechain, smoothBypassAmount); // Bypass final
+out2 = fixdenorm(rightFinalOutput);
+
+// =============================================================================
+// GAIN REDUCTION OUTPUT - Medidor de compresión para UI
+// =============================================================================
+// Genera señal de monitoreo para el medidor de gain reduction en la interfaz.
+// Muestra la reducción real aplicada al audio (con limitación de range).
+
+realExpansionLinear = dbtoa(gainReductionDbLimited);           // Reducción real CON limitación de range
+gainReductionMeter = mix(unitaryReference, realExpansionLinear, bypassInverted); // 1=activo, 0=bypass
+gainReductionOutput = min(gainReductionMeter, 1);              // Limitar a máximo 1.0
+out3 = fixdenorm(gainReductionOutput);                         // Salida para medidor GR
+
+// =============================================================================
+// ACTUALIZACIÓN DE HISTORIAS PARA EL SIGUIENTE CICLO
+// =============================================================================
+// Todas las historias se actualizan al final del ciclo de procesamiento
+
+// Historias de smoothing de parámetros
+deltaModeHistory = deltaModeHistoryNext;
+thresholdHistory = thresholdHistoryNext;
+makeupGainHistory = makeupGainHistoryNext;
+soloSidechainHistory = soloSidechainHistoryNext;
+bypassAmountHistory = bypassAmountHistoryNext;
+keyMixHistory = keyMixHistoryNext;
+dryWetMixHistory = dryWetMixHistoryNext;
+trimHistory = trimHistoryNext;
+sidechainTrimHistory = sidechainTrimHistoryNext;
+
+// Historias adicionales de smoothing
+ratioHistory = ratioHistoryNext;
+rangeHistory = rangeHistoryNext;
+kneeExpHistory = kneeExpHistoryNext;
+reactHistory = reactHistoryNext;
+smoothAmountHistory = smoothAmountHistoryNext;
+lookaheadHistory = lookaheadHistoryNext;
+hpfFreqHistory = hpfFreqHistoryNext;
+lpfFreqHistory = lpfFreqHistoryNext;
+scEnableHistory = scEnableHistoryNext;
+softclipHistory = softclipHistoryNext;
+atkHistory = atkHistoryNext;
+relHistory = relHistoryNext;
+
+// Historias de filtros LPF (etapas 1-4)
+lpfHistory1 = lpfHistory1Next;
+lpfHistory2 = lpfHistory2Next;
+lpfHistory3 = lpfHistory3Next;
+lpfHistory4 = lpfHistory4Next;
+lpfHistory5 = lpfHistory5Next;
+lpfHistory6 = lpfHistory6Next;
+lpfHistory7 = lpfHistory7Next;
+lpfHistory8 = lpfHistory8Next;
+
+// Historias de filtros HPF (etapas 1-4)
+hpfHistory1 = hpfHistory1Next;
+hpfHistory2 = hpfHistory2Next;
+hpfHistory3 = hpfHistory3Next;
+hpfHistory4 = hpfHistory4Next;
+hpfHistory5 = hpfHistory5Next;
+hpfHistory6 = hpfHistory6Next;
+hpfHistory7 = hpfHistory7Next;
+hpfHistory8 = hpfHistory8Next;
+
+// Historias de orden de filtros
+hpfOrderHistory = hpfOrderHistoryNext;
+lpfOrderHistory = lpfOrderHistoryNext;
+
+// Delays de lookahead (escritura para el siguiente ciclo)
+sidechainWriteDelay.write(normalizedSidechainSignal);
+sidechainTapDelay.write(normalizedSidechainSignal);
+// Las escrituras de leftOutputDelay y rightOutputDelay se hacen ahora arriba con el trim
