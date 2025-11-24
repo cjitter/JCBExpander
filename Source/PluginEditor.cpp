@@ -62,11 +62,11 @@ JCBExpanderAudioProcessorEditor::JCBExpanderAudioProcessorEditor (JCBExpanderAud
     
     // Verificar si el host es Logic Pro
     juce::PluginHostType hostInfo;
-    if (hostInfo.isLogic()) {
-        titleText = "v1.0.0";  // Solo versión para Logic Pro
-    } else {
-        titleText = "JCBExpander v1.0.0";  // Nombre completo para otros DAWs
-    }
+        if (hostInfo.isLogic()) {
+            titleText = "v1.0.1";  // Solo versión para Logic Pro
+        } else {
+            titleText = "JCBExpander v1.0.1";  // Nombre completo para otros DAWs
+        }
     
     titleLink.setButtonText(titleText);
     
@@ -1889,23 +1889,14 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
             // Reactivar undo después carga de preset
             isLoadingPreset = false;
             
-            // IMPORTANTE: Forzar la sincronización directa de Gen~ para asegurar valores correctos de los parámetros
-            // Esto replica la misma sincronización realizada durante la instanciación del plugin
             for (int i = 0; i < JCBExpander::num_params(); i++) {
                 const char* rawName = JCBExpander::getparametername(processor.getPluginState(), i);
                 auto paramName = juce::String(rawName ? rawName : "");
                 if (auto* param = processor.apvts.getRawParameterValue(paramName)) {
                     float value = param->load();
-                    
-                    // Aplicar la misma validación que en parameterChanged()
-                    if (paramName == "d_ATK" && value < 0.1f) {
-                        value = 0.1f;
-                    }
-                    if (paramName == "e_REL" && value < 0.1f) {
-                        value = 0.1f;
-                    }
-                    
-                    JCBExpander::setparameter(processor.getPluginState(), i, value, nullptr);
+                    if (paramName == "d_ATK" && value < 0.1f) value = 0.1f;
+                    if (paramName == "e_REL" && value < 0.1f) value = 0.1f;
+                    processor.pushGenParamByName(paramName, value);
                 }
             }
             
@@ -1951,7 +1942,6 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
                             if (presetTree.isValid()) {
                                 processor.apvts.replaceState(presetTree);
 
-                                // Resetear parámetros momentáneos directamente
                                 processor.apvts.getParameter("p_BYPASS")->setValueNotifyingHost(0.0f);
                                 processor.apvts.getParameter("m_SOLOSC")->setValueNotifyingHost(0.0f);
                                 processor.apvts.getParameter("v_DELTA")->setValueNotifyingHost(0.0f);
@@ -1988,7 +1978,6 @@ void JCBExpanderAudioProcessorEditor::setupPresetArea()
                     if (presetTree.isValid()) {
                         processor.apvts.replaceState(presetTree);
 
-                        // Resetear parámetros momentáneos directamente (como JCBCompressor)
                         processor.apvts.getParameter("p_BYPASS")->setValueNotifyingHost(0.0f);
                         processor.apvts.getParameter("m_SOLOSC")->setValueNotifyingHost(0.0f);
                         processor.apvts.getParameter("v_DELTA")->setValueNotifyingHost(0.0f);
@@ -3399,7 +3388,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     if (currentLanguage == TooltipLanguage::Spanish)
     {
         // Spanish tooltips - usar JUCE_UTF8 solo donde sea necesario para caracteres especiales
-        if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v1.0.0\nPlugin de audio open source\nClick para créditos");
+            if (key == "title") return JUCE_UTF8("JCBExpander: expansor de audio v1.0.1\nPlugin de audio open source\nClick para créditos");
         if (key == "thd") return JUCE_UTF8("THRESHOLD: nivel donde comienza la expansión\nSeñales bajo este nivel se expanden\nRango: -60 a 0 dB | Por defecto: -18 dB");
         if (key == "ratio") return JUCE_UTF8("RATIO: cantidad de expansión aplicada\nRelación entrada/salida bajo el threshold\nRango: 1:1 a 40:1 | Por defecto: 4:1");
         if (key == "knee") return JUCE_UTF8("KNEE: suavidad de la transición en el threshold\nCrea una curva gradual en vez de ángulo duro\nRango: 1 a 20 dB | Por defecto: 1 dB");
@@ -3442,7 +3431,7 @@ juce::String JCBExpanderAudioProcessorEditor::getTooltipText(const juce::String&
     else
     {
         // English tooltips
-        if (key == "title") return "JCBExpander: audio expander v1.0.0\nOpen source audio plugin\nClick for credits";
+            if (key == "title") return "JCBExpander: audio expander v1.0.1\nOpen source audio plugin\nClick for credits";
         if (key == "thd") return "THRESHOLD: level where expansion begins\nSignals below this level are expanded\nRange: -60 to 0 dB | Default: -18 dB";
         if (key == "ratio") return "RATIO: amount of expansion applied\nInput/output relationship below threshold\nRange: 1:1 to 40:1 | Default: 4:1";
         if (key == "knee") return "KNEE: smoothness of the threshold transition\nCreates a gradual curve instead of hard angle\nRange: 1 to 10 dB | Default: 1 dB";

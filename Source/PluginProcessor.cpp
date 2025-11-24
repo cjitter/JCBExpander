@@ -30,6 +30,7 @@ JCBExpanderAudioProcessor::JCBExpanderAudioProcessor()
     // Inicializar Gen~ state
     m_PluginState = (CommonState *)JCBExpander::create(44100, 64);
     JCBExpander::reset(m_PluginState);
+    rebuildGenParameterLookup();
 
     // Inicializar buffers de Gen~
     m_InputBuffers = new t_sample *[JCBExpander::num_inputs()];
@@ -166,6 +167,7 @@ void JCBExpanderAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     // 3) ***Clave***: sincroniza SR/VS con Gen y re-dimensiona sus delays/constantes
     //    Esto asegura que Gen use el sampleRate real del host
     JCBExpander::reset(m_PluginState);
+    rebuildGenParameterLookup();
     
     // Cachear indices de gen para evitar bucles por nombre (si se usan frecuentemente)
     genIdxLookahead = genIdxBypass = -1;
@@ -1318,6 +1320,45 @@ juce::AudioProcessorValueTreeState::ParameterLayout JCBExpanderAudioProcessor::c
 //==============================================================================
 // GESTIÓN DE PARÁMETROS
 //==============================================================================
+void JCBExpanderAudioProcessor::rebuildGenParameterLookup()
+{
+    genIndexByName.clear();
+    genParameterList.clear();
+
+    if (m_PluginState == nullptr)
+        return;
+
+    for (int i = 0; i < JCBExpander::num_params(); ++i)
+    {
+        const char* rawName = JCBExpander::getparametername(m_PluginState, i);
+        const juce::String name(rawName ? rawName : "");
+        genIndexByName[name] = i;
+        genParameterList.push_back(name);
+    }
+}
+
+void JCBExpanderAudioProcessor::enqueueAllParametersForAudioThread()
+{
+    for (const auto& name : genParameterList)
+    {
+        if (auto* p = apvts.getRawParameterValue(name))
+            pushGenParamByName(name, p->load());
+    }
+}
+
+void JCBExpanderAudioProcessor::pushGenParamByName(const juce::String& name, float value)
+{
+    if (m_PluginState == nullptr)
+        return;
+
+    const auto it = genIndexByName.find(name);
+    jassert(it != genIndexByName.end());
+    if (it == genIndexByName.end())
+        return;
+
+    JCBExpander::setparameter(m_PluginState, it->second, value, nullptr);
+}
+
 void JCBExpanderAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
     // Limites mínimos para ATK y REL
@@ -1638,10 +1679,28 @@ void JCBExpanderAudioProcessor::setStateInformation(const void* data, int sizeIn
     if (tree.isValid()) {
         apvts.state = tree;
 
-        // Forzar parámetros momentáneos a OFF después de cargar
-        apvts.getParameter("p_BYPASS")->setValueNotifyingHost(0.0f);
-        apvts.getParameter("m_SOLOSC")->setValueNotifyingHost(0.0f);
-        apvts.getParameter("v_DELTA")->setValueNotifyingHost(0.0f);
+        if (auto* p = apvts.getParameter("p_BYPASS"))
+            p->setValueNotifyingHost(0.0f);
+        if (auto* p = apvts.getParameter("m_SOLOSC"))
+            p->setValueNotifyingHost(0.0f);
+        if (auto* p = apvts.getParameter("v_DELTA"))
+            p->setValueNotifyingHost(0.0f);
+
+        auto clampMin = [this](const juce::String& paramId, float minValue)
+        {
+            if (auto* raw = apvts.getRawParameterValue(paramId))
+            {
+                const float current = raw->load();
+                if (current < minValue)
+                {
+                    if (auto* p = apvts.getParameter(paramId))
+                        p->setValueNotifyingHost(p->convertTo0to1(minValue));
+                }
+            }
+        };
+
+        clampMin("d_ATK", 0.1f);
+        clampMin("e_REL", 0.1f);
 
         // Clear undo history AFTER all values have been set
         // This prevents any parameter changes from being recorded in undo history
@@ -1688,37 +1747,8 @@ void JCBExpanderAudioProcessor::setStateInformation(const void* data, int sizeIn
             }
         }
 
-        // IMPORTANTE: Sincronizar todos los parámetros con Gen~ después de cargar el estado
-        for (int i = 0; i < JCBExpander::num_params(); i++) {
-            const char* rawName = JCBExpander::getparametername(m_PluginState, i);
-            auto paramName = juce::String(rawName ? rawName : "");
-            if (auto* param = apvts.getRawParameterValue(paramName)) {
-                float value = param->load();
+        enqueueAllParametersForAudioThread();
 
-                // Corregir valores muy pequeños en ATK y REL
-                if (paramName == "d_ATK") {
-                    if (value < 0.1f) {
-                        value = 0.1f;
-                        // Actualizar el parámetro en el APVTS
-                        if (auto* audioParam = apvts.getParameter(paramName)) {
-                            audioParam->setValueNotifyingHost(audioParam->convertTo0to1(value));
-                        }
-                    }
-                }
-                if (paramName == "e_REL") {
-                    if (value < 0.1f) {
-                        value = 0.1f;
-                        // Actualizar el parámetro en el APVTS
-                        if (auto* audioParam = apvts.getParameter(paramName)) {
-                            audioParam->setValueNotifyingHost(audioParam->convertTo0to1(value));
-                        }
-                    }
-                }
-                // NOTA: El compresor no tiene parámetro HOLD (es del expansor/gate)
-
-                parameterChanged(paramName, value);
-            }
-        }
         // Coherencia tras cargar estado: fijar lookahead staged y limpiar commit pendiente
         if (auto* laParam = apvts.getRawParameterValue("n_LOOKAHEAD"))
         {
