@@ -313,7 +313,7 @@ void CreditsWindow::buildFullCreditsTextSpanish()
     links.clear();
     
     // Generar texto formateado con saltos de línea para llenar el diálogo
-    fullText = "\nJCBExpander v1.0.0";
+    fullText = "\nJCBExpander v1.0.1";
     if (pluginFormat.isNotEmpty())
         fullText += " (" + pluginFormat + ")";
     fullText += "\n";
@@ -362,7 +362,7 @@ void CreditsWindow::buildFullCreditsTextEnglish()
     links.clear();
 
     // Generar texto formateado con saltos de línea para llenar el diálogo
-    fullText = "\nJCBExpander v1.0.0";
+    fullText = "\nJCBExpander v1.0.1";
     if (pluginFormat.isNotEmpty())
         fullText += " (" + pluginFormat + ")";
     fullText += "\n";
